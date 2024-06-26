@@ -1,5 +1,7 @@
 from snapi.base_classes import Base, MeasurementSet, Plottable
 
+from .image import Image
+
 # from snapi.host_galaxy import HostGalaxy
 from .lightcurve import LightCurve
 from .photometry import Photometry
@@ -11,6 +13,7 @@ __all__ = [
     "Base",
     "Plottable",
     "MeasurementSet",
+    "Image",
     "Spectroscopy",
     "Photometry",
     "LightCurve",
