@@ -105,6 +105,7 @@ repos:
         args:
           [
             "--strict", # Use mypy strict mode to enforce type hints
+            "--ignore-missing-imports"
           ]
     # Make sure Sphinx can build the documentation while explicitly omitting 
     # notebooks from the docs, so users don't have to wait through the execution 
