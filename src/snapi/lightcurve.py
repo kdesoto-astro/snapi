@@ -5,6 +5,7 @@ import astropy.units as u
 import numpy as np
 from astropy.timeseries import TimeSeries
 from matplotlib.axes import Axes
+from numba import njit
 from numpy.typing import NDArray
 from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
 
@@ -21,6 +22,16 @@ class Filter(Base):
         self._instrument = instrument
         self._center = center
         self._width = width
+
+
+@njit  # type: ignore
+def augment_helper(cen: Sequence[T], unc: Sequence[T], num: int) -> NDArray[np.float32]:
+    """numba-enhanced helper to generate many augmented LCs."""
+    rng = np.random.default_rng()
+    sampled_vals = np.zeros((num, len(cen)), dtype=np.float32)
+    for i in range(num):
+        sampled_vals[i] += rng.normal(loc=cen, scale=unc)
+    return sampled_vals
 
 
 class LightCurve(Plottable):
@@ -88,8 +99,13 @@ class LightCurve(Plottable):
         uncertainties.
         """
         if mags:
-            return np.zeros((n, 5), dtype=np.float32)
-        return np.zeros((n, 10), dtype=np.float32)
+            centers = self._ts["abs_mag"]  # TODO: abs or app mags?
+            uncs = self._ts["abs_mag_unc"]
+        else:
+            centers = self._ts["flux"]
+            uncs = self._ts["flux_unc"]
+
+        return augment_helper(centers, uncs, n)  # type: ignore
 
     def convert_to_image(
         self, method: str = "gaf", augment: bool = True, **kwargs: Mapping[str, Any]
