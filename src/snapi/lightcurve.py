@@ -1,12 +1,15 @@
 import copy
-from typing import Optional, Self, Sequence, TypeVar
+from typing import Any, Mapping, Optional, Self, Sequence, TypeVar
 
 import astropy.units as u
 import numpy as np
 from astropy.timeseries import TimeSeries
 from matplotlib.axes import Axes
+from numpy.typing import NDArray
+from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
 
 from .base_classes import Base, Plottable
+from .image import Image
 
 T = TypeVar("T", int, float)
 
@@ -57,7 +60,7 @@ class LightCurve(Plottable):
         """Plot a single light curve."""
         return ax
 
-    def add_observations(self, rows: list[dict[str, object]]) -> Self:
+    def add_observations(self, rows: list[dict[str, Any]]) -> Self:
         """Add rows to existing timeseries."""
         # TODO: accomodate different formats
         for row in rows:
@@ -78,3 +81,36 @@ class LightCurve(Plottable):
 
         lc_copy = copy.deepcopy(self)
         return lc_copy.add_observations(empty_rows)
+
+    def augment(self, mags: bool = False, n: int = 100) -> NDArray[np.float32]:
+        """Returns set of n augmented light curves where new
+        fluxes are sampled from distribution defined by flux
+        uncertainties.
+        """
+        if mags:
+            return np.zeros((n, 5), dtype=np.float32)
+        return np.zeros((n, 10), dtype=np.float32)
+
+    def convert_to_image(
+        self, method: str = "gaf", augment: bool = True, **kwargs: Mapping[str, Any]
+    ) -> Image:
+        """Convert light curve to an image for ML applications.
+
+        TODO: use fluxes or mags?
+        """
+        if augment:  # augment LC to get many copies before transforming
+            series = self.augment(mags=False, n=100)  # TODO: de-hardcode this
+        else:
+            series = np.atleast_2d(self._ts["flux"])
+
+        if method == "gaf":  # Gramian angular field
+            transformer = GramianAngularField(**kwargs)
+        elif method == "mtf":  # Markov transition field
+            transformer = MarkovTransitionField(**kwargs)
+        elif method == "recurrence":  # recurrence plot
+            transformer = RecurrencePlot(**kwargs)
+        else:
+            raise NotImplementedError("Imaging method must be one of: 'gaf', 'mtf', 'recurrence'")
+
+        vals = transformer.transform(series)
+        return Image(vals)
