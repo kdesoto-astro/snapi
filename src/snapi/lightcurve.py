@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
 
 from .base_classes import Base, Plottable
+from .formatter import Formatter
 from .image import Image
 
 T = TypeVar("T", int, float)
@@ -169,8 +170,45 @@ class LightCurve(Plottable):
             )
             self._ts.remove_rows(remove_ind)
 
-    def plot(self, ax: Axes) -> Axes:
-        """Plot a single light curve."""
+    def plot(self, ax: Axes, formatter: Optional[Formatter] = None) -> Axes:
+        """Plot a single light curve.
+        Face and edge colors determined by formatter.
+        """
+        if formatter is None:
+            ax.errorbar(
+                self.times,
+                self.fluxes,
+                yerr=self.flux_errors,
+                c="k",
+                fmt="none",
+                zorder=500,
+            )
+            ax.scatter(
+                self.times,
+                self.fluxes,
+                c="b",
+                edgecolor="k",
+                marker="o",
+                zorder=1000,
+            )
+            return ax
+
+        ax.errorbar(
+            self.times,
+            self.fluxes,
+            yerr=self.flux_errors,
+            c=formatter.edge_color,
+            fmt="none",
+            zorder=500,
+        )
+        ax.scatter(
+            self.times,
+            self.fluxes,
+            c=formatter.face_color,
+            edgecolor=formatter.edge_color,
+            marker=formatter.marker_style,
+            zorder=1000,
+        )
         return ax
 
     def add_observations(self, rows: list[dict[str, Any]]) -> Self:

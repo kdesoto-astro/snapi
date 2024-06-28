@@ -14,7 +14,7 @@ from .photometry import Photometry
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
 
-URL_TNS_API = "https://sandbox.wis-tns.org/api/get"
+URL_TNS_API = "https://www.wis-tns.org/api/get"
 TNS_HEADER = {
     "User-Agent": f'tns_marker{{"tns_id": "{TNS_BOT_ID}", "type": "bot", "name": "{TNS_BOT_NAME}"}}'
 }
@@ -35,15 +35,18 @@ def get_reset_time(response: requests.Response) -> Optional[int]:
 
 
 def tns_search_helper(
-    ra: Optional[str] = "", dec: Optional[str] = "", internal_name: Optional[str] = ""
+    ra: Optional[str] = "",
+    dec: Optional[str] = "",
+    radius: Optional[Any] = 3,
+    internal_name: Optional[str] = "",
 ) -> Any:
     """Retrieve search results from TNS."""
     search_url = URL_TNS_API + "/search"
     search_query = [
         ("ra", ra),
         ("dec", dec),
-        ("radius", ""),
-        ("units", ""),
+        ("radius", radius),
+        ("units", "arcsec"),
         ("objname", ""),
         ("objname_exact_match", 0),
         ("internal_name", internal_name),
@@ -61,7 +64,7 @@ def tns_search_helper(
     reset = get_reset_time(r)
     if reset is not None:
         time.sleep(reset + 1)
-    return r.json()
+    return r.json()["data"]["reply"]
 
 
 def tns_object_helper(obj_name: Optional[str]) -> Any:
@@ -80,7 +83,7 @@ def tns_object_helper(obj_name: Optional[str]) -> Any:
     reset = get_reset_time(r)
     if reset is not None:
         time.sleep(reset + 1)
-    return r.json()
+    return r.json()["data"]["reply"]
 
 
 class Transient(Base):
@@ -96,6 +99,7 @@ class Transient(Base):
         photometry: Optional[Photometry] = None,
         spectroscopy: Optional[Spectroscopy] = None,
         internal_names: Optional[set[str]] = None,
+        spec_class: Optional[str] = None
         # host: HostGalaxy = None,
     ) -> None:
         if iid is None:
@@ -111,6 +115,8 @@ class Transient(Base):
             self.internal_names = set()
         else:
             self.internal_names = internal_names
+
+        self.spec_class = spec_class
         # self.host = host
 
     def add_lightcurve(self, lightcurve: LightCurve) -> None:
@@ -142,16 +148,30 @@ class Transient(Base):
         for spec in spectra:
             self.add_spectrum(spec)
 
-    def query_tns(self) -> None:
-        """Query TNS for transient by first id, then internal_names, then coordinate."""
+    def _ingest_tns_info(self, result: dict[str, Any]) -> None:
+        """Ingests any new information about
+        object from TNS and adds to object.
+        """
+        pass
+
+    def query_tns(self) -> bool:
+        """Query TNS for transient by first id, then internal_names, then coordinate.
+        Returns True if result found.
+        """
         # first try retrieving by name
-        response = tns_object_helper(self.id)
-        print(response)
+        r = tns_object_helper(self.id)
+        if "objname" in r:
+            self._ingest_tns_info(r)
+            return True
 
         # if unsuccessful, try searching by internal names.
         for i in self.internal_names:
             r = tns_search_helper(internal_name=i)
-            print(r)
+            if len(r) == 1:
+                result = r[0]
+                obj_query = tns_object_helper(result["objname"])
+                self._ingest_tns_info(obj_query)
+                return True
 
         # if unsuccessful, try searching by ra/dec:
         ra_formatted = self._coord.ra.to_string(
@@ -160,5 +180,15 @@ class Transient(Base):
         dec_formatted = self._coord.dec.to_string(
             unit=u.degree, sep=":", pad=True, alwayssign=True, precision=2  # pylint: disable=no-member
         )
-        r = tns_search_helper(ra=ra_formatted, dec=dec_formatted)
-        print(r)
+        rad = 3.0  # initial radius check
+        r = tns_search_helper(ra=ra_formatted, dec=dec_formatted, radius=rad)
+        while len(r) > 1:
+            rad /= 2
+            r = tns_search_helper(ra=ra_formatted, dec=dec_formatted, radius=rad)
+        if len(r) == 1:
+            result = r[0]
+            obj_query = tns_object_helper(result["objname"])
+            self._ingest_tns_info(obj_query)
+            return True
+
+        return False
