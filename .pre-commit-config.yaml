@@ -105,6 +105,7 @@ repos:
         args:
           [
             "--strict", # Use mypy strict mode to enforce type hints
+            "--ignore-missing-imports"
           ]
     # Make sure Sphinx can build the documentation while explicitly omitting 
     # notebooks from the docs, so users don't have to wait through the execution 
@@ -142,7 +143,7 @@ repos:
       - id: pytest-check
         name: Run unit tests
         description: Run unit tests with pytest.
-        entry: bash -c "if python -m pytest --co -qq; then python -m pytest --cov=./src --cov-report=html; fi"
+        entry: bash -c "if python -m pytest --co -qq; then python -m pytest -m 'not skip_precommit' --cov=./src --cov-report=html; fi"
         language: system
         pass_filenames: false
         always_run: true

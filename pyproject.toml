@@ -16,6 +16,12 @@ classifiers = [
 dynamic = ["version"]
 requires-python = ">=3.9"
 dependencies = [
+    'astropy',
+    'matplotlib',
+    'numba',
+    'numpy',
+    'pyts',
+    'types-requests'
 ]
 
 [project.urls]
