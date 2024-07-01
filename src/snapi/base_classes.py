@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Self
+from typing import Optional, TypeVar
 
 from matplotlib.axes import Axes
+
+MeasT = TypeVar("MeasT", bound="MeasurementSet")
 
 
 class Base(ABC):
@@ -11,7 +13,7 @@ class Base(ABC):
     """
 
     @abstractmethod
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         self._id: Optional[str] = None
 
     @property
@@ -35,7 +37,7 @@ class Plottable(Base):
     """Class for objects that can be plotted."""
 
     @abstractmethod
-    def plot(self: Self, ax: Axes) -> Axes:
+    def plot(self, ax: Axes) -> Axes:
         """Adds plot of object in-place to
         'ax' object. Returns ax.
         """
@@ -52,7 +54,7 @@ class MeasurementSet(Base):
         pass
 
     @abstractmethod
-    def filter_by_instrument(self, instrument: str) -> Self:
+    def filter_by_instrument(self: MeasT, instrument: str) -> MeasT:
         """Return MeasurementSet with only measurements
         from instrument named 'instrument.'
         """

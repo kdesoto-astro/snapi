@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Mapping, Optional, Self, Sequence, TypeVar
+from typing import Any, Mapping, Optional, Sequence, TypeVar
 
 import astropy.units as u
 import numba
@@ -14,6 +14,7 @@ from .formatter import Formatter
 from .image import Image
 
 T = TypeVar("T", int, float)
+LightT = TypeVar("LightT", bound="LightCurve")
 
 
 class Filter(Base):
@@ -211,7 +212,7 @@ class LightCurve(Plottable):
         )
         return ax
 
-    def add_observations(self, rows: list[dict[str, Any]]) -> Self:
+    def add_observations(self: LightT, rows: list[dict[str, Any]]) -> LightT:
         """Add rows to existing timeseries."""
         # TODO: accomodate different formats
         for row in rows:
@@ -232,7 +233,7 @@ class LightCurve(Plottable):
         self._ts.replace_column("flux", new_f)
         self._ts.replace_column("flux_unc", new_ferr)
 
-    def pad(self, n_times: int, inplace: bool = False) -> Self:
+    def pad(self: LightT, n_times: int, inplace: bool = False) -> LightT:
         """Extends light curve by padding.
         Currently, pads at 1000 days past last observation,
         and pads according to limiting values.
