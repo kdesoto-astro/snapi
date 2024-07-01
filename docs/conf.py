@@ -9,7 +9,7 @@ import sys
 from importlib.metadata import version
 
 # Define path to the code to be documented **relative to where conf.py (this file) is kept**
-sys.path.insert(0, os.path.abspath("../src/"))
+sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -40,7 +40,8 @@ copybutton_prompt_text = ">> "
 copybutton_selector = "div:not(.no-copybutton) > div.highlight > pre"
 
 templates_path = []
-exclude_patterns = ["_build", "**.ipynb_checkpoints"]
+# Exclude patterns
+exclude_patterns = ["_build", "**.ipynb_checkpoints", "__pycache__", "*.pyc", "*-checkpoint.py"]
 
 # This assumes that sphinx-build is called from the root directory
 master_doc = "index"
@@ -50,8 +51,8 @@ html_show_sourcelink = False
 add_module_names = False
 
 autoapi_type = "python"
-autoapi_dirs = ["../src"]
-autoapi_ignore = ["*/__main__.py", "*/_version.py"]
+autoapi_dirs = ["../src/snapi"]
+autoapi_ignore = ["*/__main__.py", "*/_version.py", "*-checkpoint.py"]
 autoapi_add_toc_tree_entry = False
 autoapi_member_order = "bysource"
 
