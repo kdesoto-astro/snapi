@@ -4,7 +4,6 @@ from snapi.transient import tns_object_helper, tns_search_helper
 
 
 @pytest.mark.skip_precommit
-@pytest.mark.local  # local because API keys are not on Github
 def test_tns_search_helper() -> None:
     """Test that the TNS search queries
     are working as intended.
@@ -26,7 +25,6 @@ def test_tns_search_helper() -> None:
 
 
 @pytest.mark.skip_precommit
-@pytest.mark.local  # local because API keys are not on Github
 def test_tns_object_helper() -> None:
     """Test that the TNS object retrieval
     function is working as intended.
