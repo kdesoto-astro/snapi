@@ -21,7 +21,8 @@ dependencies = [
     'numba',
     'numpy',
     'pyts',
-    'types-requests'
+    'types-requests',
+    'requests'
 ]
 
 [project.urls]
