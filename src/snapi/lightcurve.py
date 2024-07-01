@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Mapping, Optional, Sequence, TypeVar
+from typing import Any, Mapping, Optional, Sequence, Type, TypeVar
 
 import astropy.units as u
 import numba
@@ -22,8 +22,45 @@ class Filter(Base):
 
     def __init__(self, instrument: str, center: u.Quantity, width: Optional[u.Quantity]):
         self._instrument = instrument
-        self._center = center
-        self._width = width
+
+        if center.unit.physical_type == "frequency":  # convert to wavelength
+            self._center = (
+                center.to(u.Hz, equivalencies=u.spectral()) ** -1 * u.AA  # pylint: disable=no-member
+            )
+        elif center.unit.physical_type == "length":  # convert to wavelength
+            self._center = center.to(u.AA)  # pylint: disable=no-member
+        else:
+            raise TypeError("center must be a wavelength or frequency quantity!")
+
+        if width is None:
+            self._width = width
+        elif width.unit.physical_type == "frequency":  # convert to wavelength
+            self._width = width.to(u.Hz, equivalencies=u.spectral()) ** -1 * u.AA  # pylint: disable=no-member
+        elif width.unit.physical_type == "length":  # convert to wavelength
+            self._width = width.to(u.AA)  # pylint: disable=no-member
+        else:
+            raise TypeError("width must be a wavelength or frequency quantity!")
+
+    @property
+    def instrument(self) -> str:
+        """Return instrument of filter."""
+        return self._instrument
+
+    @property
+    def center(self) -> u.Quantity:
+        """Return center of filter,
+        in Angstroms.
+        """
+        return self._center.to(u.AA)  # pylint: disable=no-member
+
+    @property
+    def width(self) -> u.Quantity:
+        """Return width of filter,
+        in Angstroms.
+        """
+        if self._width is None:
+            return self._width
+        return self._width.to(u.AA)  # pylint: disable=no-member
 
 
 @numba.njit(parallel=True)  # type: ignore
@@ -75,36 +112,76 @@ class LightCurve(Plottable):
     """Class that contains all information for a
     single light curve. Associated with a single instrument
     and filter.
+
+    LightCurve should always be (a) as complete as possible and
+    (b) sorted by time.
     """
 
     def __init__(
         self,
-        times: Sequence[u.Quantity],  # TODO: somehow enforce time-like
-        fluxes: Optional[Sequence[T]],
-        flux_errs: Optional[Sequence[T]],
-        mags: Optional[Sequence[T]],
-        mag_errs: Optional[Sequence[T]],
-        abs_mags: Optional[Sequence[T]],
-        abs_mag_errs: Optional[Sequence[T]],
-        zpts: Optional[Sequence[T]],
-        filt: Optional[Filter],
+        times: Any,  # TODO: somehow enforce time-like
+        fluxes: Optional[Sequence[T]] = None,
+        flux_errs: Optional[Sequence[T]] = None,
+        mags: Optional[Sequence[T]] = None,
+        mag_errs: Optional[Sequence[T]] = None,
+        abs_mags: Optional[Sequence[T]] = None,
+        abs_mag_errs: Optional[Sequence[T]] = None,
+        zpts: Optional[Sequence[T]] = None,
+        filt: Optional[Filter] = None,
     ) -> None:
         self._filter = filt
 
-        self._ts: TimeSeries = TimeSeries(
-            {
-                "time": times,
-                "flux": fluxes,
-                "flux_unc": flux_errs,
-                "app_mag": mags,
-                "app_mag_unc": mag_errs,
-                "abs_mag": abs_mags,
-                "abs_mag_unc": abs_mag_errs,
-                "zpt": zpts,
-            }
-        )
+        if isinstance(times, TimeSeries):
+            self._ts = times
+        else:
+            self._ts = TimeSeries(
+                {
+                    "time": times,
+                    "flux": fluxes,
+                    "flux_unc": flux_errs,
+                    "app_mag": mags,
+                    "app_mag_unc": mag_errs,
+                    "abs_mag": abs_mags,
+                    "abs_mag_unc": abs_mag_errs,
+                    "zpt": zpts,
+                }
+            )
 
         self._rng = np.random.default_rng()
+        self._sort()  # sort by time
+        self._complete()  # fills in missing info
+
+    def _complete(self) -> None:
+        """Given zeropoints, fills in missing apparent
+        magnitudes from fluxes and vice versa.
+        """
+        # first convert fluxes to missing apparent mags
+        missing_mag = np.isnan(self._ts["app_mag"])
+        sub_table = self._ts[missing_mag]
+        self._ts["app_mag"][missing_mag] = -2.5 * np.log10(sub_table["flux"]) + sub_table["zpt"]
+
+        # uncertainties
+        missing_magunc = np.isnan(self._ts["app_mag_unc"])
+        sub_table = self._ts[missing_magunc]
+        self._ts["app_mag_unc"][missing_magunc] = (
+            2.5 / np.log(10.0) * sub_table["flux_unc"] / sub_table["flux"]
+        )
+
+        # then convert mags to missing fluxes
+        missing_flux = np.isnan(self._ts["flux"])
+        sub_table = self._ts[missing_flux]
+        self._ts["flux"][missing_flux] = 10.0 ** (-1.0 * (sub_table["app_mag"] - sub_table["zpt"]) / 2.5)
+
+        # uncertainties
+        missing_fluxunc = np.isnan(self._ts["flux_unc"])
+        sub_table = self._ts[missing_fluxunc]
+        self._ts["flux_unc"][missing_fluxunc] = (
+            np.log(10.0) / 2.5 * sub_table["flux"] * sub_table["app_mag_unc"]
+        )
+
+    def _sort(self) -> None:
+        """Sort light curve by time."""
+        self._ts.sort()
 
     @property
     def times(self) -> Any:
@@ -117,6 +194,7 @@ class LightCurve(Plottable):
     def times(self, t: NDArray[u.Quantity]) -> None:
         """Replace time values."""
         self._ts.replace_column("time", t)
+        self._sort()
 
     @property
     def fluxes(self) -> Any:
@@ -129,6 +207,7 @@ class LightCurve(Plottable):
     def fluxes(self, f: NDArray[np.float32]) -> None:
         """Replace flux values."""
         self._ts.replace_column("flux", f)
+        self._complete()
 
     @property
     def flux_errors(self) -> Any:
@@ -141,6 +220,12 @@ class LightCurve(Plottable):
     def flux_errors(self, ferr: NDArray[np.float32]) -> None:
         """Replace flux uncertainty values."""
         self._ts.replace_column("flux_unc", ferr)
+        self._complete()
+
+    @property
+    def filter(self) -> Optional[Filter]:
+        """Return filter object associated with LightCurve."""
+        return self._filter
 
     @property
     def peak(self) -> dict[str, Any]:
@@ -217,6 +302,8 @@ class LightCurve(Plottable):
         # TODO: accomodate different formats
         for row in rows:
             self._ts.add_row(row)
+        self._sort()
+        self._complete()
         return self
 
     def merge_close_times(self, eps: float = 4e-2) -> None:
@@ -232,6 +319,7 @@ class LightCurve(Plottable):
         self._ts.remove_rows(np.argwhere(repeat_idxs))
         self._ts.replace_column("flux", new_f)
         self._ts.replace_column("flux_unc", new_ferr)
+        self._complete()
 
     def pad(self: LightT, n_times: int, inplace: bool = False) -> LightT:
         """Extends light curve by padding.
@@ -295,3 +383,29 @@ class LightCurve(Plottable):
             raise NotImplementedError("Imaging method must be one of: 'gaf', 'mtf', 'recurrence'")
 
         return [Image(vc) for vc in vals_concat]
+
+    def save(self, fn: str, save_format: str = "ascii.csv") -> None:
+        """Save LightCurve object as an
+        astropy table.
+        """
+        table = self._ts.copy()
+        if self._filter is not None:
+            table.meta["instrument"] = self._filter.instrument
+            table.meta["center"] = self._filter.center.value  # in Angstroms
+            table.meta["width"] = self._filter.width.value  # in Angstroms
+        table.write(fn, format=save_format)
+
+    @classmethod
+    def load(cls: Type[LightT], fn: str, save_format: str = "ascii.csv") -> LightT:
+        """Load LightCurve from saved table. Automatically
+        extracts feature information.
+        """
+        ts = TimeSeries.read(fn, format=save_format, time_column="mjd")
+        if "instrument" in ts.meta:
+            extracted_filter = Filter(
+                ts.meta["instrument"],
+                ts.meta["center"] * u.AA,  # pylint: disable=no-member
+                ts.meta["width"] * u.AA,  # pylint: disable=no-member
+            )
+            return cls(ts, filt=extracted_filter)
+        return cls(ts)
