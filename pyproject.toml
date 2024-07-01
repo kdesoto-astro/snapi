@@ -22,6 +22,7 @@ dependencies = [
     'numpy',
     'pyts',
     'types-requests'
+    'requests'
 ]
 
 [project.urls]
