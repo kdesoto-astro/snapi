@@ -1,9 +1,11 @@
-from typing import Self, Set
+from typing import Set, TypeVar
 
 from matplotlib.axes import Axes
 
 from .base_classes import MeasurementSet, Plottable
 from .spectrum import Spectrum
+
+SpecT = TypeVar("SpecT", bound="Spectroscopy")
 
 
 class Spectroscopy(MeasurementSet, Plottable):
@@ -15,7 +17,7 @@ class Spectroscopy(MeasurementSet, Plottable):
     def __init__(self) -> None:
         self._spectra: Set[Spectrum] = set()
 
-    def filter_by_instrument(self, instrument: str) -> Self:
+    def filter_by_instrument(self: SpecT, instrument: str) -> SpecT:
         """Return MeasurementSet with only measurements
         from instrument named 'instrument.'
         """

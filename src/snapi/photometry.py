@@ -1,9 +1,11 @@
-from typing import Self, Set
+from typing import Set, TypeVar
 
 from matplotlib.axes import Axes
 
 from .base_classes import MeasurementSet, Plottable
 from .lightcurve import LightCurve
+
+PhotT = TypeVar("PhotT", bound="Photometry")
 
 
 class Photometry(MeasurementSet, Plottable):
@@ -12,7 +14,7 @@ class Photometry(MeasurementSet, Plottable):
     def __init__(self) -> None:
         self._lightcurves: Set[LightCurve] = set()
 
-    def filter_by_instrument(self, instrument: str) -> Self:
+    def filter_by_instrument(self: PhotT, instrument: str) -> PhotT:
         """Return MeasurementSet with only measurements
         from instrument named 'instrument.'
         """
