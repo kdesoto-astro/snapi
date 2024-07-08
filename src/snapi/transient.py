@@ -24,7 +24,8 @@ class Transient(Base):
         photometry: Optional[Photometry] = None,
         spectroscopy: Optional[Spectroscopy] = None,
         internal_names: Optional[set[str]] = None,
-        spec_class: Optional[str] = None
+        spec_class: Optional[str] = None,
+        redshift: Optional[float] = None,
         # host: HostGalaxy = None,
     ) -> None:
         if iid is None:
@@ -42,6 +43,7 @@ class Transient(Base):
             self.internal_names = internal_names
 
         self.spec_class = spec_class
+        self.redshift = redshift
         # self.host = host
 
     @property
