@@ -287,6 +287,19 @@ class LightCurve(Plottable):
         self._complete()
 
     @property
+    def zeropoints(self) -> Any:
+        """Return zeropoints of sorted LC as
+        numpy array.
+        """
+        return self._ts["zpt"].value  # pylint: disable=no-member; type: ignore
+
+    @zeropoints.setter
+    def zeropoints(self, new_zpts: NDArray[np.float32]) -> None:
+        """Replace zeropoint values."""
+        self._ts.replace_column("zpt", new_zpts)
+        self._complete()
+
+    @property
     def filter(self) -> Optional[Filter]:
         """Return filter object associated with LightCurve."""
         return self._filter
@@ -383,6 +396,35 @@ class LightCurve(Plottable):
         self._ts.remove_rows(np.argwhere(repeat_idxs))
         self._ts.replace_column("flux", new_f)
         self._ts.replace_column("flux_unc", new_ferr)
+        self._complete()
+
+    def merge(self, other: LightT) -> None:
+        """Merge other light curve into this one, assuming they are
+        from the same instrument and filter.
+        """
+        if self._filter != other.filter:
+            raise ValueError("Filters must be the same to merge light curves!")
+
+        non_repeat_idxs = np.where(self.times != other.times)
+
+        new_times = np.concatenate((self.times, other.times[non_repeat_idxs]))
+        new_fluxes = np.concatenate((self.fluxes, other.fluxes[non_repeat_idxs]))
+        new_flux_errs = np.concatenate((self.flux_errors, other.flux_errors[non_repeat_idxs]))
+        new_mags = np.concatenate((self.mags, other.mags[non_repeat_idxs]))
+        new_mag_errs = np.concatenate((self.mag_errors, other.mag_errors[non_repeat_idxs]))
+        new_zpts = np.concatenate((self.zeropoints, other.zeropoints[non_repeat_idxs]))
+
+        self._ts = TimeSeries(
+            {
+                "time": new_times,
+                "flux": new_fluxes,
+                "flux_unc": new_flux_errs,
+                "mag": new_mags,
+                "mag_unc": new_mag_errs,
+                "zpt": new_zpts,
+            }
+        )
+        self._sort()
         self._complete()
 
     def pad(self: LightT, n_times: int, inplace: bool = False) -> LightT:

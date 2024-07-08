@@ -302,8 +302,15 @@ class Photometry(MeasurementSet, Plottable):
         light_curve: LightCurve
             the light curve to add to the set of photometry
         """
+        for lc in self._lightcurves:
+            if lc.filter == light_curve.filter:
+                lc.merge(light_curve)
+                self._generate_time_series()
+                return None
+
         self._lightcurves.add(light_curve)
         self._generate_time_series()  # update time series
+        return None
 
     def remove_lightcurve(self, light_curve: LightCurve) -> None:
         """Remove a light curve from the set of photometry.

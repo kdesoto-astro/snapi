@@ -18,6 +18,7 @@ class QueryResult:
     internal_names: Optional[set[str]] = None
     coordinates: Optional[SkyCoord] = None
     redshift: Optional[float] = None
+    spec_class: Optional[str] = None
     light_curves: Optional[set[LightCurve]] = None
     spectra: Optional[set[Spectrum]] = None
 

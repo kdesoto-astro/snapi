@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 from matplotlib.axes import Axes
 
@@ -14,10 +14,10 @@ class Base(ABC):
 
     @abstractmethod
     def __init__(self) -> None:
-        self._id: Optional[str] = None
+        self._id: str = ""
 
     @property
-    def id(self) -> Optional[str]:
+    def id(self) -> str:
         """Object identifier."""
         return self._id
 
