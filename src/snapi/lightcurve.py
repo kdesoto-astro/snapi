@@ -58,6 +58,10 @@ class Filter(Base):
         """
         return f"{self._instrument}_{self._band}"
 
+    def __eq__(self, value: object) -> bool:
+        """Check if two filters are equal."""
+        return str(self) == str(value)
+
     @property
     def instrument(self) -> str:
         """Return instrument of filter."""
