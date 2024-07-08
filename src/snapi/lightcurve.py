@@ -1,6 +1,6 @@
 """Contains classes for light curves and filters."""
 import copy
-from typing import Any, Mapping, Optional, Sequence, Type, TypeVar
+from typing import Any, Iterable, Mapping, Optional, Sequence, Type, TypeVar
 
 import astropy.units as u
 import numba
@@ -14,7 +14,7 @@ from .base_classes import Base, Plottable
 from .formatter import Formatter
 from .image import Image
 
-T = TypeVar("T", int, float)
+T = TypeVar("T", int, float, np.float32)
 LightT = TypeVar("LightT", bound="LightCurve")
 
 
@@ -26,7 +26,7 @@ class Filter(Base):
         instrument: str,
         band: str,
         center: u.Quantity,
-        width: Optional[u.Quantity],
+        width: Optional[u.Quantity] = None,
         lim_mag: Optional[float] = None,
     ) -> None:
         self._instrument = instrument
@@ -57,6 +57,10 @@ class Filter(Base):
         Format: instrument_band.
         """
         return f"{self._instrument}_{self._band}"
+
+    def __eq__(self, value: object) -> bool:
+        """Check if two filters are equal."""
+        return str(self) == str(value)
 
     @property
     def instrument(self) -> str:
@@ -147,18 +151,27 @@ class LightCurve(Plottable):
     def __init__(
         self,
         times: Any,  # TODO: somehow enforce time-like
-        fluxes: Optional[Sequence[T]] = None,
-        flux_errs: Optional[Sequence[T]] = None,
-        mags: Optional[Sequence[T]] = None,
-        mag_errs: Optional[Sequence[T]] = None,
-        zpts: Optional[Sequence[T]] = None,
+        fluxes: Optional[Iterable[T]] = None,
+        flux_errs: Optional[Iterable[T]] = None,
+        mags: Optional[Iterable[T]] = None,
+        mag_errs: Optional[Iterable[T]] = None,
+        zpts: Optional[Iterable[T]] = None,
         filt: Optional[Filter] = None,
     ) -> None:
         self._filter = filt
-
         if isinstance(times, TimeSeries):
             self._ts = times
         else:
+            if fluxes is None:
+                fluxes = (np.nan * np.ones(len(times))).astype(np.float32)
+            if flux_errs is None:
+                flux_errs = np.nan * np.ones_like(fluxes)
+            if mags is None:
+                mags = np.nan * np.ones_like(fluxes)
+            if mag_errs is None:
+                mag_errs = np.nan * np.ones_like(fluxes)
+            if zpts is None:
+                zpts = np.nan * np.ones_like(fluxes)
             self._ts = TimeSeries(
                 {
                     "time": times,
@@ -179,22 +192,30 @@ class LightCurve(Plottable):
         magnitudes from fluxes and vice versa.
         """
         # first convert fluxes to missing apparent mags
-        missing_mag = np.isnan(self._ts["mag"])
+        missing_mag = (np.isnan(self._ts["mag"])) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["flux"]))
         sub_table = self._ts[missing_mag]
         self._ts["mag"][missing_mag] = -2.5 * np.log10(sub_table["flux"]) + sub_table["zpt"]
 
         # uncertainties
-        missing_magunc = np.isnan(self._ts["mag_unc"])
+        missing_magunc = (
+            np.isnan(self._ts["mag_unc"]) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["flux_unc"]))
+        )
         sub_table = self._ts[missing_magunc]
-        self._ts["mag_unc"][missing_magunc] = 2.5 / np.log(10.0) * (sub_table["flux_unc"] / sub_table["flux"])
+        if len(sub_table) > 0:
+            self._ts["mag_unc"][missing_magunc] = (
+                2.5 / np.log(10.0) * (sub_table["flux_unc"] / sub_table["flux"])
+            )
 
         # then convert mags to missing fluxes
-        missing_flux = np.isnan(self._ts["flux"])
+        missing_flux = np.isnan(self._ts["flux"]) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["mag"]))
         sub_table = self._ts[missing_flux]
-        self._ts["flux"][missing_flux] = 10.0 ** (-1.0 * (sub_table["mag"] - sub_table["zpt"]) / 2.5)
+        if len(sub_table) > 0:
+            self._ts["flux"][missing_flux] = 10.0 ** (-1.0 * (sub_table["mag"] - sub_table["zpt"]) / 2.5)
 
         # uncertainties
-        missing_fluxunc = np.isnan(self._ts["flux_unc"])
+        missing_fluxunc = (
+            np.isnan(self._ts["flux_unc"]) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["mag_unc"]))
+        )
         sub_table = self._ts[missing_fluxunc]
         self._ts["flux_unc"][missing_fluxunc] = (
             np.log(10.0) / 2.5 * (sub_table["flux"] * sub_table["mag_unc"])
@@ -267,6 +288,19 @@ class LightCurve(Plottable):
     def mag_errors(self, merr: NDArray[np.float32]) -> None:
         """Replace magnitude uncertainty values."""
         self._ts.replace_column("mag_unc", merr)
+        self._complete()
+
+    @property
+    def zeropoints(self) -> Any:
+        """Return zeropoints of sorted LC as
+        numpy array.
+        """
+        return self._ts["zpt"].value  # pylint: disable=no-member; type: ignore
+
+    @zeropoints.setter
+    def zeropoints(self, new_zpts: NDArray[np.float32]) -> None:
+        """Replace zeropoint values."""
+        self._ts.replace_column("zpt", new_zpts)
         self._complete()
 
     @property
@@ -366,6 +400,35 @@ class LightCurve(Plottable):
         self._ts.remove_rows(np.argwhere(repeat_idxs))
         self._ts.replace_column("flux", new_f)
         self._ts.replace_column("flux_unc", new_ferr)
+        self._complete()
+
+    def merge(self, other: LightT) -> None:
+        """Merge other light curve into this one, assuming they are
+        from the same instrument and filter.
+        """
+        if self._filter != other.filter:
+            raise ValueError("Filters must be the same to merge light curves!")
+
+        non_repeat_idxs = np.where(self.times != other.times)
+
+        new_times = np.concatenate((self.times, other.times[non_repeat_idxs]))
+        new_fluxes = np.concatenate((self.fluxes, other.fluxes[non_repeat_idxs]))
+        new_flux_errs = np.concatenate((self.flux_errors, other.flux_errors[non_repeat_idxs]))
+        new_mags = np.concatenate((self.mags, other.mags[non_repeat_idxs]))
+        new_mag_errs = np.concatenate((self.mag_errors, other.mag_errors[non_repeat_idxs]))
+        new_zpts = np.concatenate((self.zeropoints, other.zeropoints[non_repeat_idxs]))
+
+        self._ts = TimeSeries(
+            {
+                "time": new_times,
+                "flux": new_fluxes,
+                "flux_unc": new_flux_errs,
+                "mag": new_mags,
+                "mag_unc": new_mag_errs,
+                "zpt": new_zpts,
+            }
+        )
+        self._sort()
         self._complete()
 
     def pad(self: LightT, n_times: int, inplace: bool = False) -> LightT:
