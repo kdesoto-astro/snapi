@@ -14,6 +14,7 @@ from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlo
 from .base_classes import Base, Plottable
 from .formatter import Formatter
 from .image import Image
+from .utils import list_datasets
 
 T = TypeVar("T", int, float, np.float32)
 LightT = TypeVar("LightT", bound="LightCurve")
@@ -506,24 +507,43 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
         return [Image(vc) for vc in vals_concat]
 
-    def save(self, file_name: str, save_format: str = "ascii.csv") -> None:
-        """Save LightCurve object as an
-        astropy table.
+    def save(self, file_name: str, path: Optional[str] = None, append: bool = False) -> None:
+        """Save LightCurve object as an HDF5 file.
+
+        Parameters
+        ----------
+        file_name : str
+            Name of file to save.
+        path : str
+            HDF5 path to save LightCurve.
+        append : bool
+            Whether to append to existing file.
         """
+        if path is None:
+            path = str(self.filter)
         table = self._ts.copy()
         if self._filter is not None:
             table.meta["instrument"] = self._filter.instrument
             table.meta["band"] = self._filter.band
             table.meta["center"] = self._filter.center.value  # in Angstroms
             table.meta["width"] = self._filter.width.value  # in Angstroms
-        table.write(file_name, format=save_format)
+        if append:
+            table.write(file_name, format="hdf5", path=path, append=True)
+        else:
+            table.write(file_name, format="hdf5", path=path, overwrite=True)
 
     @classmethod
-    def load(cls: Type[LightT], file_name: str, save_format: str = "ascii.csv") -> LightT:
-        """Load LightCurve from saved table. Automatically
+    def load(cls: Type[LightT], file_name: str, path: Optional[str] = None) -> LightT:
+        """Load LightCurve from saved HDF5 table. Automatically
         extracts feature information.
         """
-        time_series = TimeSeries.read(file_name, format=save_format, time_column="mjd")
+        if path is None:
+            paths = list_datasets(file_name)
+            if len(paths) > 1:
+                raise ValueError("Multiple datasets found in file. Please specify path.")
+            path = paths[0]
+
+        time_series = TimeSeries.read(file_name, format="hdf5", path=path, time_column="mjd")
         if "instrument" in time_series.meta:
             extracted_filter = Filter(
                 time_series.meta["instrument"],

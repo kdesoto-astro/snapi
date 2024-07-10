@@ -1,6 +1,7 @@
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Type, TypeVar
 
 import astropy.units as u
+import h5py
 from astropy.coordinates import SkyCoord
 
 from .base_classes import Base
@@ -8,6 +9,8 @@ from .lightcurve import LightCurve
 from .photometry import Photometry
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
+
+TransientT = TypeVar("TransientT", bound="Transient")
 
 
 class Transient(Base):
@@ -34,7 +37,10 @@ class Transient(Base):
 
         self._coord = SkyCoord(ra=ra, dec=dec, frame="icrs")
 
-        self.photometry = photometry
+        if photometry is None:
+            self.photometry = Photometry()
+        else:
+            self.photometry = photometry
         self.spectroscopy = spectroscopy
         if internal_names is None:
             self.internal_names = set()
@@ -69,9 +75,6 @@ class Transient(Base):
 
     def add_lightcurve(self, lightcurve: LightCurve) -> None:
         """Adds a single light curve to photometry."""
-        if self.photometry is None:
-            self.photometry = Photometry()  # initialize new instance
-
         self.photometry.add_lightcurve(lightcurve)
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:
@@ -117,3 +120,38 @@ class Transient(Base):
         if result["spectra"] is not None:
             for spec in result["spectra"]:
                 self.add_spectrum(spec)
+
+    def save(self, filename: str) -> None:
+        """Save transient object to HDF5 file."""
+        self.photometry.save(filename, path="photometry")
+        # TODO: add spectroscopy save
+
+        with h5py.File(filename, "w") as f:
+            f.attrs["id"] = self.id
+            f.attrs["ra"] = self.coordinates.ra.deg
+            f.attrs["dec"] = self.coordinates.dec.deg
+            f.attrs["redshift"] = self.redshift
+            f.attrs["spec_class"] = self.spec_class
+            f.attrs["internal_names"] = list(self.internal_names)
+
+    @classmethod
+    def load(cls: Type[TransientT], filename: str) -> TransientT:
+        """Load transient object from HDF5 file."""
+        with h5py.File(filename, "r") as f:
+            photometry: Photometry = Photometry.load(filename, path="photometry")
+            iid = f.attrs["id"]
+            ra = f.attrs["ra"] * u.deg  # pylint: disable=no-member
+            dec = f.attrs["dec"] * u.deg  # pylint: disable=no-member
+            redshift = f.attrs["redshift"]
+            spec_class = f.attrs["spec_class"]
+            internal_names = set(f.attrs["internal_names"])
+
+        return cls(
+            ra=ra,
+            dec=dec,
+            iid=iid,
+            photometry=photometry,
+            spec_class=spec_class,
+            redshift=redshift,
+            internal_names=internal_names,
+        )

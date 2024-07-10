@@ -1,6 +1,6 @@
 """Stores Photometry class and helper functions."""
 import copy
-from typing import List, Set, Tuple, TypeVar
+from typing import List, Optional, Set, Tuple, Type, TypeVar
 
 import astropy.units as u
 import george
@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 
 from .base_classes import MeasurementSet, Plottable
 from .lightcurve import LightCurve
+from .utils import list_datasets
 
 PhotT = TypeVar("PhotT", bound="Photometry")
 
@@ -61,8 +62,11 @@ def generate_gp(
 class Photometry(MeasurementSet, Plottable):
     """Contains collection of LightCurve objects."""
 
-    def __init__(self) -> None:
-        self._lightcurves: Set[LightCurve] = set()
+    def __init__(self, lcs: Optional[set[LightCurve]] = None) -> None:
+        if lcs is None:
+            self._lightcurves: Set[LightCurve] = set()
+        else:
+            self._lightcurves = copy.deepcopy(lcs)
         self._rng: np.random.Generator = np.random.default_rng()
         self._ts: TimeSeries = None
 
@@ -141,6 +145,8 @@ class Photometry(MeasurementSet, Plottable):
 
     def _generate_time_series(self) -> None:
         """Generate time series from set of light curves."""
+        if len(self._lightcurves) == 0:
+            return None
         times = np.concatenate([lc.times for lc in self._lightcurves])
         mags = np.concatenate([lc.mags for lc in self._lightcurves])
         mag_errors = np.concatenate([lc.mag_errors for lc in self._lightcurves])
@@ -161,6 +167,7 @@ class Photometry(MeasurementSet, Plottable):
             filt_widths=filt_widths,
         )
         self._ts.sort("time")
+        return None
 
     @property
     def times(self) -> NDArray[np.float32]:
@@ -308,7 +315,7 @@ class Photometry(MeasurementSet, Plottable):
                 self._generate_time_series()
                 return None
 
-        self._lightcurves.add(light_curve)
+        self._lightcurves.add(copy.deepcopy(light_curve))
         self._generate_time_series()  # update time series
         return None
 
@@ -478,3 +485,39 @@ class Photometry(MeasurementSet, Plottable):
         self._ts.sort("time")
 
         return dense_arr
+
+    def save(self, filename: str, path: str = "photometry") -> None:
+        """Save the Photometry object to and HDF5 file.
+
+        Parameters
+        ----------
+        filename: str
+            the filename to save the Photometry object to
+        """
+        append = False
+        for lc in self._lightcurves:
+            if not append:
+                lc.save(filename, path=f"{path}/{str(lc.filter)}")
+                append = True
+            else:
+                lc.save(filename, path=f"{path}/{str(lc.filter)}", append=True)
+
+    @classmethod
+    def load(cls: Type[PhotT], filename: str, path: str = "photometry") -> PhotT:
+        """Load the Photometry object from an HDF5 file.
+
+        Parameters
+        ----------
+        filename: str
+            the filename to load the Photometry object from
+        """
+        lcs = set()
+        # get all paths that start with path
+        lc_path_list = [lc_path for lc_path in list_datasets(filename) if lc_path.startswith(path)]
+
+        for lc_path in lc_path_list:
+            lc = LightCurve.load(filename, path=lc_path)
+            lcs.add(lc)
+
+        phot: PhotT = cls(lcs)
+        return phot
