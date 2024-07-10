@@ -12,7 +12,6 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from ..lightcurve import Filter, LightCurve
-from ..transient import Transient
 from .query_agent import QueryAgent
 from .query_result import QueryResult
 
@@ -217,22 +216,3 @@ class TNSQueryAgent(QueryAgent):
                 return [], False
 
         return results, True
-
-    def query_transient(
-        self, transient: Transient, **kwargs: Mapping[str, Any]
-    ) -> tuple[List[QueryResult], bool]:
-        """
-        Query by Transient object.
-        """
-        # first try retrieving by name
-        name_list = list(transient.internal_names) + [
-            transient.id,
-        ]
-        r, success = self.query_by_name(name_list, **kwargs)
-        if success:
-            return r, True
-        # if unsuccessful, try retrieving by coordinates
-        r, success = self.query_by_coords(transient.coordinates, **kwargs)
-        if success:
-            return r, True
-        return [], False

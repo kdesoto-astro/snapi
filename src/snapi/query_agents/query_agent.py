@@ -51,18 +51,15 @@ class QueryAgent(abc.ABC):
         Query by Transient object.
         """
         # first try retrieving by name
-        r, success = self.query_by_name(transient.id, **kwargs)
+        name_list = list(transient.internal_names) + [
+            transient.id,
+        ]
+        r, success = self.query_by_name(name_list, **kwargs)
         if success:
             return r, True
 
-        # if unsuccessful, try searching by internal names.
-        for internal_name in transient.internal_names:
-            r, success = self.query_by_name(internal_name, **kwargs)
-            if success:
-                return r, True
-
-        # if unsuccessful, try searching by ra/dec:
-        r, success = self.query_by_name(transient.coordinates, **kwargs)
+        # if unsuccessful, try retrieving by coordinates
+        r, success = self.query_by_coords(transient.coordinates, **kwargs)
         if success:
             return r, True
 

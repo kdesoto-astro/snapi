@@ -2,6 +2,7 @@ from typing import Any
 
 import pytest
 
+from snapi.query_agents.alerce import ALeRCEQueryAgent
 from snapi.query_agents.tns import TNSQueryAgent
 
 
@@ -12,6 +13,12 @@ def tns_agent() -> TNSQueryAgent:
 
 
 @pytest.fixture
+def alerce_agent() -> ALeRCEQueryAgent:
+    """ALeRCE query agent fixture."""
+    return ALeRCEQueryAgent()
+
+
+@pytest.fixture
 def test_event() -> dict[str, Any]:
     """Test event fixture."""
     return {
@@ -19,6 +26,7 @@ def test_event() -> dict[str, Any]:
         "ra": 210.910674,
         "dec": 54.31165,
         "redshift": 0.0008,
+        "ztf_id": "ZTF23aaklqou",
     }
 
 
@@ -26,13 +34,13 @@ class Helpers:  # pylint: disable=too-few-public-methods
     """Helper functions for test cases."""
 
     @staticmethod
-    def assert_query_result(query_result: Any, event: dict[str, Any]) -> None:
+    def assert_query_result(query_result: Any, iid: str, ra: float, dec: float, z: float) -> None:
         """Assert query result."""
-        assert query_result.objname == event["id"]
+        assert query_result.objname == iid
         assert query_result.coordinates is not None
-        assert query_result.coordinates.ra.deg == pytest.approx(event["ra"])
-        assert query_result.coordinates.dec.deg == pytest.approx(event["dec"])
-        assert query_result.redshift == pytest.approx(event["redshift"])
+        assert query_result.coordinates.ra.deg == pytest.approx(ra)
+        assert query_result.coordinates.dec.deg == pytest.approx(dec)
+        assert query_result.redshift == pytest.approx(z)
         assert query_result.internal_names is not None
         assert query_result.light_curves is not None
 
