@@ -158,7 +158,8 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             if "time" not in times.colnames:
                 raise ValueError("TimeSeries must have a 'time' column!")
             for k in self._ts_cols:
-                times.setdefault(k, np.nan)
+                if k not in times.colnames:
+                    times[k] = np.nan * np.ones(len(times))
             self._ts = TimeSeries(times[["time", *self._ts_cols]])  # make copy
 
         else:
