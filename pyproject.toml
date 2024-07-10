@@ -16,11 +16,13 @@ classifiers = [
 dynamic = ["version"]
 requires-python = ">=3.9"
 dependencies = [
+    'alerce',
     'astropy',
     'george',
     'matplotlib',
     'numba',
     'numpy',
+    'pandas',
     'pyts',
     'types-requests',
     'requests'
