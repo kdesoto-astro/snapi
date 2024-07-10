@@ -15,7 +15,9 @@ def test_tns_query_by_name(tns_agent: TNSQueryAgent, test_event: dict[str, Any],
     result_list = tns_agent.query_by_name(test_event["id"])[0]
     assert len(result_list) == 1
     query_result = result_list[0]
-    helpers.assert_query_result(query_result, test_event)
+    helpers.assert_query_result(
+        query_result, test_event["id"], test_event["ra"], test_event["dec"], test_event["redshift"]
+    )
 
 
 @pytest.mark.skip_precommit
@@ -25,7 +27,9 @@ def test_tns_query_by_coords(tns_agent: TNSQueryAgent, test_event: dict[str, Any
     result_list = tns_agent.query_by_coords(test_coord)[0]
     assert len(result_list) == 1
     query_result = result_list[0]
-    helpers.assert_query_result(query_result, test_event)
+    helpers.assert_query_result(
+        query_result, test_event["id"], test_event["ra"], test_event["dec"], test_event["redshift"]
+    )
 
 
 @pytest.mark.skip_precommit
@@ -40,4 +44,6 @@ def test_tns_query_by_transient(tns_agent: TNSQueryAgent, test_event: dict[str, 
     result_list = tns_agent.query_transient(test_transient)[0]
     assert len(result_list) == 1
     query_result = result_list[0]
-    helpers.assert_query_result(query_result, test_event)
+    helpers.assert_query_result(
+        query_result, test_event["id"], test_event["ra"], test_event["dec"], test_event["redshift"]
+    )

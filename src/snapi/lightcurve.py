@@ -27,7 +27,6 @@ class Filter(Base):
         band: str,
         center: u.Quantity,
         width: Optional[u.Quantity] = None,
-        lim_mag: Optional[float] = None,
     ) -> None:
         self._instrument = instrument
         self._band = band
@@ -49,8 +48,6 @@ class Filter(Base):
             self._width = width.to(u.AA)  # pylint: disable=no-member
         else:
             raise TypeError("width must be a wavelength or frequency quantity!")
-
-        self._lim_mag = lim_mag
 
     def __str__(self) -> str:
         """Return string representation of filter.
@@ -87,11 +84,6 @@ class Filter(Base):
         if self._width is None:
             return self._width
         return self._width.to(u.AA)  # pylint: disable=no-member
-
-    @property
-    def lim_mag(self) -> Optional[float]:
-        """Return limiting magnitude of filter."""
-        return self._lim_mag
 
 
 @numba.njit(parallel=True)  # type: ignore
@@ -139,7 +131,7 @@ def calc_all_deltas(series: NDArray[np.float32], use_sum: bool = False) -> NDArr
     return np.array(deltas).T
 
 
-class LightCurve(Plottable):
+class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
     """Class that contains all information for a
     single light curve. Associated with a single instrument
     and filter.
@@ -156,6 +148,7 @@ class LightCurve(Plottable):
         mags: Optional[Iterable[T]] = None,
         mag_errs: Optional[Iterable[T]] = None,
         zpts: Optional[Iterable[T]] = None,
+        upper_limits: Optional[Iterable[bool]] = None,
         filt: Optional[Filter] = None,
     ) -> None:
         self._filter = filt
@@ -180,6 +173,7 @@ class LightCurve(Plottable):
                     "mag": mags,
                     "mag_unc": mag_errs,
                     "zpt": zpts,
+                    "non_detections": upper_limits,
                 }
             )
 
@@ -307,6 +301,16 @@ class LightCurve(Plottable):
     def filter(self) -> Optional[Filter]:
         """Return filter object associated with LightCurve."""
         return self._filter
+
+    @property
+    def non_detections(self) -> TimeSeries:
+        """Return non-detection observations."""
+        return self._ts.copy()["non_detections"]
+
+    @property
+    def detections(self) -> Optional[Any]:
+        """Return detection observations."""
+        return ~self._ts.copy()["non_detections"]
 
     @property
     def peak(self) -> dict[str, Any]:
@@ -504,7 +508,6 @@ class LightCurve(Plottable):
             table.meta["band"] = self._filter.band
             table.meta["center"] = self._filter.center.value  # in Angstroms
             table.meta["width"] = self._filter.width.value  # in Angstroms
-            table.meta["lim_mag"] = self._filter.lim_mag
         table.write(file_name, format=save_format)
 
     @classmethod
@@ -519,7 +522,6 @@ class LightCurve(Plottable):
                 time_series.meta["band"],
                 time_series.meta["center"] * u.AA,  # pylint: disable=no-member
                 time_series.meta["width"] * u.AA,  # pylint: disable=no-member,
-                time_series.meta["lim_mag"],
             )
             return cls(time_series, filt=extracted_filter)
         return cls(time_series)
