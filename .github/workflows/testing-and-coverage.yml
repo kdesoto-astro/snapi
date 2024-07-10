@@ -23,6 +23,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip' # caching pip dependencies
     - name: Install librdkafka
       run: sudo apt-get install -y librdkafka-dev
     - name: Install dependencies
