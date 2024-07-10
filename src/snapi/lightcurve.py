@@ -5,6 +5,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence, Type, TypeVar
 import astropy.units as u
 import numba
 import numpy as np
+from astropy.table.table import QTable
 from astropy.timeseries import TimeSeries
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -152,8 +153,15 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         filt: Optional[Filter] = None,
     ) -> None:
         self._filter = filt
-        if isinstance(times, TimeSeries):
-            self._ts = times
+        self._ts_cols = ["flux", "flux_unc", "mag", "mag_unc", "zpt", "non_detections"]
+        if isinstance(times, QTable):
+            if "time" not in times.colnames:
+                raise ValueError("TimeSeries must have a 'time' column!")
+            for k in self._ts_cols:
+                if k not in times.colnames:
+                    times[k] = np.nan * np.ones(len(times))
+            self._ts = TimeSeries(times[["time", *self._ts_cols]])  # make copy
+
         else:
             if fluxes is None:
                 fluxes = (np.nan * np.ones(len(times))).astype(np.float32)

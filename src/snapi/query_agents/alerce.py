@@ -32,9 +32,12 @@ class ALeRCEQueryAgent(QueryAgent):
             lc = self._client.query_lightcurve(objname, format="pandas")
             dets = list(lc["detections"])[0]
             detections = pd.DataFrame.from_dict(dets)
-            forced_phot = list(lc["forced_photometry"])[0]
-            forced_detections = pd.DataFrame.from_dict(forced_phot)
-            all_detections = pd.concat([detections, forced_detections], join="inner")
+            try:  # not available with older versions of alerce-client
+                forced_phot = list(lc["forced_photometry"])[0]
+                forced_detections = pd.DataFrame.from_dict(forced_phot)
+                all_detections = pd.concat([detections, forced_detections], join="inner")
+            except KeyError:
+                all_detections = detections
             lcs = set()
             for b in np.unique(all_detections["fid"]):
                 filt = Filter(instrument="ZTF", band=b, center=np.nan * u.AA)  # pylint: disable=no-member
@@ -60,7 +63,7 @@ class ALeRCEQueryAgent(QueryAgent):
         print(query_result["light_curves"])
         return QueryResult(
             objname=query_result["objname"],
-            internal_names=query_result["internal_names"],
+            internal_names=set(),
             coordinates=query_result["coords"],
             redshift=query_result["redshift"],
             light_curves=query_result["light_curves"],
@@ -75,32 +78,33 @@ class ALeRCEQueryAgent(QueryAgent):
         results = []
 
         for name in names_arr:
-            photometry, success = self._photometry_helper(name)
-            if success:
-                lcs = photometry
-            else:
-                lcs = set()
+            try:
+                photometry, success = self._photometry_helper(name)
+                if success:
+                    lcs = photometry
+                else:
+                    lcs = set()
 
-            # how to get RA/DEC from ALeRCE?
-            features = self._client.query_object(name)
-            ra = features["meanra"]
-            dec = features["meandec"]
+                features = self._client.query_object(name)
+                ra = features["meanra"]
+                dec = features["meandec"]
 
-            redshift = self._client.catshtm_redshift(ra, dec, self._radius)
+                redshift = self._client.catshtm_redshift(ra, dec, self._radius)
 
-            results.append(
-                self._format_query_result(
-                    {
-                        "objname": name,
-                        "internal_names": set(),
-                        "coords": SkyCoord(
-                            ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
-                        ),  # pylint: disable=no-member
-                        "light_curves": lcs,
-                        "redshift": redshift,
-                    }
+                results.append(
+                    self._format_query_result(
+                        {
+                            "objname": name,
+                            "coords": SkyCoord(
+                                ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
+                            ),  # pylint: disable=no-member
+                            "light_curves": lcs,
+                            "redshift": redshift,
+                        }
+                    )
                 )
-            )
+            except RuntimeError:
+                results.append(QueryResult())
 
         return results, True
 

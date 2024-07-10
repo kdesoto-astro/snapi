@@ -1,4 +1,4 @@
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -6,7 +6,6 @@ from astropy.coordinates import SkyCoord
 from .base_classes import Base
 from .lightcurve import LightCurve
 from .photometry import Photometry
-from .query_agents.query_result import QueryResult
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
 
@@ -97,24 +96,24 @@ class Transient(Base):
         for spec in spectra:
             self.add_spectrum(spec)
 
-    def ingest_query_info(self, result: QueryResult) -> None:
+    def ingest_query_info(self, result: dict[str, Any]) -> None:
         """Ingests information from a QueryResult adds to object."""
-        if result.internal_names is not None:
-            self.internal_names.update(result.internal_names)
-        self.internal_names.add(result.objname)
+        if result["internal_names"] is not None:
+            self.internal_names.update(result["internal_names"])
+        self.internal_names.add(result["objname"])
 
         # prioritize object IAU name as main ID
         self._choose_main_name()
 
         if self.spec_class is None:  # TODO: add logging stating what was added
-            self.spec_class = result.spec_class
+            self.spec_class = result["spec_class"]
         if self.redshift is None:
-            self.redshift = result.redshift
+            self.redshift = result["redshift"]
         if self.coordinates is None:
-            self._coord = result.coordinates
-        if result.light_curves is not None:
-            for lc in result.light_curves:
+            self._coord = result["coordinates"]
+        if result["light_curves"] is not None:
+            for lc in result["light_curves"]:
                 self.add_lightcurve(lc)
-        if result.spectra is not None:
-            for spec in result.spectra:
+        if result["spectra"] is not None:
+            for spec in result["spectra"]:
                 self.add_spectrum(spec)

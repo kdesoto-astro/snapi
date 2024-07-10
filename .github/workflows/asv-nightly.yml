@@ -39,7 +39,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "${{ env.PYTHON_VERSION }}"
-
+      - name: Install librdkafka
+        run: sudo apt-get install -y librdkafka-dev
       - name: Install dependencies
         run: |
           sudo apt-get update

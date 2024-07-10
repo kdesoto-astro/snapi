@@ -185,7 +185,7 @@ class TNSQueryAgent(QueryAgent):
                 obj_query = self._tns_object_helper(result["objname"])
                 results.append(self._format_query_result(obj_query))
             else:
-                return [], False
+                results.append(QueryResult())
 
         return results, True
 
@@ -213,6 +213,6 @@ class TNSQueryAgent(QueryAgent):
                 obj_query = self._tns_object_helper(result["objname"])
                 results.append(self._format_query_result(obj_query))
             else:
-                return [], False
+                results.append(QueryResult())
 
         return results, True
