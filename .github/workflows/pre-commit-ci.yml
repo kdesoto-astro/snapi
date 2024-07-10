@@ -20,6 +20,21 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: 3.12
+    - name: Update Homebrew
+      run: |
+        brew update --preinstall
+        cat "$(brew --repository)/Library/Taps/homebrew/homebrew-core/Formula/foo.rb" > .github/brew-formulae
+    - name: Configure Homebrew cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/Library/Caches/Homebrew/foo--*
+          ~/Library/Caches/Homebrew/downloads/*--foo-*
+        key: brew-${{ hashFiles('.github/brew-formulae') }}
+        restore-keys: brew-
+    - name: Install Homebrew dependencies
+      run: |
+        env HOMEBREW_NO_AUTO_UPDATE=1 brew install librdkafka
     - name: Install dependencies
       run: |
         sudo apt-get update
