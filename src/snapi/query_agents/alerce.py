@@ -5,6 +5,7 @@ import astropy.units as u
 import numpy as np
 import pandas as pd
 from alerce.core import Alerce  # pylint: disable=import-error
+from alerce.exceptions import APIError
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
@@ -53,7 +54,7 @@ class ALeRCEQueryAgent(QueryAgent):
                 lcs.add(lc)
             return lcs, True
 
-        except RuntimeError:
+        except APIError:
             return set(), False
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
@@ -103,7 +104,7 @@ class ALeRCEQueryAgent(QueryAgent):
                         }
                     )
                 )
-            except RuntimeError:
+            except APIError:
                 results.append(QueryResult())
 
         return results, True

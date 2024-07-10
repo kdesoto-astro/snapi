@@ -12,9 +12,10 @@ def test_alerce_query_by_name(
     alerce_agent: ALeRCEQueryAgent, test_event: dict[str, Any], helpers: Any
 ) -> None:
     """Test ALeRCE query by name."""
-    try:
-        result_list = alerce_agent.query_by_name(test_event["ztf_id"])[0]
-    except RuntimeError:
+    result_list = alerce_agent.query_by_name(test_event["ztf_id"])[0]
+    for _ in range(10):
+        if len(result_list) == 1:
+            break
         result_list = alerce_agent.query_by_name(test_event["ztf_id"])[0]
     assert len(result_list) == 1
     query_result = result_list[0]
@@ -41,9 +42,10 @@ def test_alerce_query_by_transient(
         dec=test_event["dec"] * u.deg,  # pylint: disable=no-member
         redshift=test_event["redshift"],
     )
-    try:
-        result_list = alerce_agent.query_transient(test_transient)[0]
-    except RuntimeError:
+    result_list = alerce_agent.query_transient(test_transient)[0]
+    for _ in range(10):
+        if len(result_list) == 1:
+            break
         result_list = alerce_agent.query_transient(test_transient)[0]
     assert len(result_list) == 1
     query_result = result_list[0]
