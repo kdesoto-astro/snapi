@@ -3,9 +3,10 @@ from typing import Any, List, Mapping
 
 import astropy.units as u
 import numpy as np
-from antares.models import Locus  # pylint: disable=import-error
-from antares_client.search import cone_search, get_by_ztf_object_id  # pylint: disable=import-error
+from antares_client.models import Locus  # pylint: disable=import-error
+from antares_client.search import get_by_ztf_object_id, search  # pylint: disable=import-error
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
 
 from ..lightcurve import Filter, LightCurve
 from .query_agent import QueryAgent
@@ -40,22 +41,43 @@ class ANTARESQueryAgent(QueryAgent):
             light_curves=query_result["light_curves"],
         )
 
+    def _cone_search_helper(self, center: SkyCoord, radius: u.Quantity) -> list[Locus]:
+        """Directly sends request to ANTARES databases to avoid outdated antares-client
+        issues."""
+        try:
+            search_query = {
+                "query": {
+                    "bool": {
+                        "filter": {
+                            "sky_distance": {
+                                "distance": f"{radius.to(u.deg).value} degree",  # pylint: disable=no-member
+                                "htm16": {"center": center.to_string()},
+                            },
+                        },
+                    },
+                },
+            }
+            return list(search(search_query))
+        except RuntimeError:
+            return []
+
     def _locus_helper(self, locus: Locus) -> tuple[float, float, set[LightCurve]]:
         time_series = locus.timeseries[self._ts_cols]
-        time_series.rename_column("ant_mjd", "time")
+        time_series["time"] = Time(time_series["ant_mjd"], format="mjd", scale="utc")
         time_series.rename_column("ztf_magpsf", "mag")
         time_series.rename_column("ztf_sigmapsf", "mag_err")
-        time_series.rename_column("ztf_fid", "band")
-        time_series.rename_column("ztf_magzpsci", "zp")
+        time_series.rename_column("ztf_magzpsci", "zpt")
 
+        bands = time_series["ztf_fid"]
         ra = np.nanmean(time_series["ant_ra"])
         dec = np.nanmean(time_series["ant_dec"])
 
-        time_series.remove_columns(["ant_ra", "ant_dec"])
+        time_series.remove_columns(["ant_ra", "ant_dec", "ztf_fid", "ant_mjd"])
+        time_series["non_detection"] = np.zeros(len(time_series), dtype=bool)
 
         lcs = set()
-        for b in np.unique(time_series["band"]):
-            mask = time_series["band"] == b
+        for b in np.unique(bands):
+            mask = bands == b
             filt = Filter(
                 instrument="ZTF",
                 band="g" if b == 1 else "r",
@@ -81,7 +103,7 @@ class ANTARESQueryAgent(QueryAgent):
                 results.append(
                     self._format_query_result(
                         {
-                            "internal_name": locus.alert_id,
+                            "internal_name": locus.locus_id,
                             "objname": locus.properties["ztf_object_id"],
                             "coords": SkyCoord(
                                 ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
@@ -104,13 +126,13 @@ class ANTARESQueryAgent(QueryAgent):
         results = []
         for coord in coords_arr:
             try:
-                for locus in cone_search(coord, self._radius):
+                for locus in self._cone_search_helper(coord, self._radius):
                     ra, dec, lcs = self._locus_helper(locus)
 
                     results.append(
                         self._format_query_result(
                             {
-                                "internal_name": locus.alert_id,
+                                "internal_name": locus.locus_id,
                                 "objname": locus.properties["ztf_object_id"],
                                 "coords": SkyCoord(
                                     ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member

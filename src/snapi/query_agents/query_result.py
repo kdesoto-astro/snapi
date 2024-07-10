@@ -1,6 +1,6 @@
 """Stores the results of a query."""
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from astropy.coordinates import SkyCoord
 
@@ -29,3 +29,15 @@ class QueryResult:
             self.light_curves = set()
         if self.spectra is None:
             self.spectra = set()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert object to dictionary."""
+        return {
+            "objname": self.objname,
+            "internal_names": self.internal_names,
+            "coordinates": self.coordinates,
+            "redshift": self.redshift,
+            "spec_class": self.spec_class,
+            "light_curves": self.light_curves,
+            "spectra": self.spectra,
+        }
