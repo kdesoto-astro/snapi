@@ -20,6 +20,7 @@ dependencies = [
     'antares-client',
     'astropy',
     'george',
+    'h5py',
     'matplotlib',
     'numba',
     'numpy',
