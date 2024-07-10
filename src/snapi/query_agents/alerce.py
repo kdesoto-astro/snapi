@@ -32,9 +32,12 @@ class ALeRCEQueryAgent(QueryAgent):
             lc = self._client.query_lightcurve(objname, format="pandas")
             dets = list(lc["detections"])[0]
             detections = pd.DataFrame.from_dict(dets)
-            forced_phot = list(lc["forced_photometry"])[0]
-            forced_detections = pd.DataFrame.from_dict(forced_phot)
-            all_detections = pd.concat([detections, forced_detections], join="inner")
+            try:  # not available with older versions of alerce-client
+                forced_phot = list(lc["forced_photometry"])[0]
+                forced_detections = pd.DataFrame.from_dict(forced_phot)
+                all_detections = pd.concat([detections, forced_detections], join="inner")
+            except RuntimeError:
+                all_detections = detections
             lcs = set()
             for b in np.unique(all_detections["fid"]):
                 filt = Filter(instrument="ZTF", band=b, center=np.nan * u.AA)  # pylint: disable=no-member
