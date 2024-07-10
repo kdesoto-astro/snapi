@@ -60,7 +60,7 @@ class ALeRCEQueryAgent(QueryAgent):
         print(query_result["light_curves"])
         return QueryResult(
             objname=query_result["objname"],
-            internal_names=query_result["internal_names"],
+            internal_names=set(),
             coordinates=query_result["coords"],
             redshift=query_result["redshift"],
             light_curves=query_result["light_curves"],
@@ -75,32 +75,33 @@ class ALeRCEQueryAgent(QueryAgent):
         results = []
 
         for name in names_arr:
-            photometry, success = self._photometry_helper(name)
-            if success:
-                lcs = photometry
-            else:
-                lcs = set()
+            try:
+                photometry, success = self._photometry_helper(name)
+                if success:
+                    lcs = photometry
+                else:
+                    lcs = set()
 
-            # how to get RA/DEC from ALeRCE?
-            features = self._client.query_object(name)
-            ra = features["meanra"]
-            dec = features["meandec"]
+                features = self._client.query_object(name)
+                ra = features["meanra"]
+                dec = features["meandec"]
 
-            redshift = self._client.catshtm_redshift(ra, dec, self._radius)
+                redshift = self._client.catshtm_redshift(ra, dec, self._radius)
 
-            results.append(
-                self._format_query_result(
-                    {
-                        "objname": name,
-                        "internal_names": set(),
-                        "coords": SkyCoord(
-                            ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
-                        ),  # pylint: disable=no-member
-                        "light_curves": lcs,
-                        "redshift": redshift,
-                    }
+                results.append(
+                    self._format_query_result(
+                        {
+                            "objname": name,
+                            "coords": SkyCoord(
+                                ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
+                            ),  # pylint: disable=no-member
+                            "light_curves": lcs,
+                            "redshift": redshift,
+                        }
+                    )
                 )
-            )
+            except RuntimeError:
+                results.append(QueryResult())
 
         return results, True
 

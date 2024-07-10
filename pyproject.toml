@@ -17,12 +17,14 @@ dynamic = ["version"]
 requires-python = ">=3.9"
 dependencies = [
     'alerce',
+    'antares-client',
     'astropy',
     'george',
     'matplotlib',
     'numba',
     'numpy',
     'pandas',
+    'pandas-stubs',
     'pyts',
     'types-requests',
     'requests'

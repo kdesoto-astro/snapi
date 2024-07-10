@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 
 from snapi.query_agents.alerce import ALeRCEQueryAgent
+from snapi.query_agents.antares import ANTARESQueryAgent
 from snapi.query_agents.tns import TNSQueryAgent
 
 
@@ -16,6 +17,12 @@ def tns_agent() -> TNSQueryAgent:
 def alerce_agent() -> ALeRCEQueryAgent:
     """ALeRCE query agent fixture."""
     return ALeRCEQueryAgent()
+
+
+@pytest.fixture
+def antares_agent() -> ANTARESQueryAgent:
+    """ANTARES query agent fixture."""
+    return ANTARESQueryAgent()
 
 
 @pytest.fixture
