@@ -92,9 +92,10 @@ class TNSQueryAgent(QueryAgent):
             phot_dict["mag_errs"] = phot_mag_errs.astype(np.float32)
 
             light_curve = LightCurve(
-                times=np.array(phot_dict["times"]),
+                times=phot_dict["times"],
                 mags=phot_dict["mags"],
                 mag_errs=phot_dict["mag_errs"],
+                upper_limits=np.zeros_like(phot_dict["mags"], dtype=bool),
                 # zpts=phot_dict["zpts"],
                 filt=phot_dict["filt"],
             )

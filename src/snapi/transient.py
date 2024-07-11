@@ -20,9 +20,9 @@ class Transient(Base):
 
     def __init__(
         self,
-        ra: u.Quantity,
-        dec: u.Quantity,
         iid: Optional[str] = None,
+        ra: Optional[u.Quantity] = None,
+        dec: Optional[u.Quantity] = None,
         photometry: Optional[Photometry] = None,
         spectroscopy: Optional[Spectroscopy] = None,
         internal_names: Optional[set[str]] = None,
@@ -35,7 +35,10 @@ class Transient(Base):
         else:
             self.id = str(iid)
 
-        self._coord = SkyCoord(ra=ra, dec=dec, frame="icrs")
+        if ra is None or dec is None:
+            self._coord = None
+        else:
+            self._coord = SkyCoord(ra=ra, dec=dec, frame="icrs")
 
         if photometry is None:
             self.photometry = Photometry()
@@ -115,8 +118,7 @@ class Transient(Base):
         if self.coordinates is None:
             self._coord = result["coordinates"]
         if result["light_curves"] is not None:
-            for lc in result["light_curves"]:
-                self.add_lightcurve(lc)
+            self.add_lightcurves(result["light_curves"])
         if result["spectra"] is not None:
             for spec in result["spectra"]:
                 self.add_spectrum(spec)
@@ -139,12 +141,16 @@ class Transient(Base):
         """Load transient object from HDF5 file."""
         with h5py.File(filename, "r") as f:
             photometry: Photometry = Photometry.load(filename, path="photometry")
-            iid = f.attrs["id"]
-            ra = f.attrs["ra"] * u.deg  # pylint: disable=no-member
-            dec = f.attrs["dec"] * u.deg  # pylint: disable=no-member
-            redshift = f.attrs["redshift"]
-            spec_class = f.attrs["spec_class"]
-            internal_names = set(f.attrs["internal_names"])
+            iid = f.attrs.get("id")
+            ra = f.attrs.get("ra")
+            if ra is not None:
+                ra = ra * u.deg  # pylint: disable=no-member
+            dec = f.attrs.get("dec")
+            if dec is not None:
+                dec = dec * u.deg  # pylint: disable=no-member
+            redshift = f.attrs.get("redshift")
+            spec_class = f.attrs.get("spec_class")
+            internal_names = f.attrs.get("internal_names", default=set())
 
         return cls(
             ra=ra,

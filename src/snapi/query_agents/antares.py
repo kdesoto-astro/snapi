@@ -29,6 +29,11 @@ class ANTARESQueryAgent(QueryAgent):
             "ant_dec",
             "ztf_magzpsci",
         ]
+        self._int_to_band = {
+            1: "g",
+            2: "r",
+            3: "i",
+        }
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
         """
@@ -80,7 +85,7 @@ class ANTARESQueryAgent(QueryAgent):
             mask = bands == b
             filt = Filter(
                 instrument="ZTF",
-                band="g" if b == 1 else "r",
+                band=self._int_to_band[b],
                 center=np.nan * u.AA,  # pylint: disable=no-member
             )
             lc = LightCurve(time_series[mask], filt=filt)
@@ -99,6 +104,9 @@ class ANTARESQueryAgent(QueryAgent):
         for name in names_arr:
             try:
                 locus = get_by_ztf_object_id(name)
+                if locus is None:
+                    results.append(QueryResult())
+                    continue
                 ra, dec, lcs = self._locus_helper(locus)
                 results.append(
                     self._format_query_result(
