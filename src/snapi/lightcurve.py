@@ -162,21 +162,34 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             for k in self._ts_cols:
                 if k not in times.colnames:
                     times[k] = np.nan * np.ones(len(times))
-                if "non_detections" not in times.colnames:
-                    times["non_detections"] = np.zeros(len(times), dtype=bool)
+                # convert all columns in self._ts_col to np.float32
+                times[k] = times[k].astype(np.float32)
+            if "non_detections" not in times.colnames:
+                times["non_detections"] = np.zeros(len(times), dtype=bool)
+
             self._ts = TimeSeries(times[["time", *self._ts_cols, "non_detections"]])  # make copy
 
         else:
             if fluxes is None:
-                fluxes = (np.nan * np.ones(len(times))).astype(np.float32)
+                fluxes = np.nan * np.ones(len(times))
+            else:
+                fluxes = np.array(fluxes, dtype=np.float32)
             if flux_errs is None:
                 flux_errs = np.nan * np.ones_like(fluxes)
+            else:
+                flux_errs = np.array(flux_errs, dtype=np.float32)
             if mags is None:
                 mags = np.nan * np.ones_like(fluxes)
+            else:
+                mags = np.array(mags, dtype=np.float32)
             if mag_errs is None:
                 mag_errs = np.nan * np.ones_like(fluxes)
+            else:
+                mag_errs = np.array(mag_errs, dtype=np.float32)
             if zpts is None:
                 zpts = np.nan * np.ones_like(fluxes)
+            else:
+                zpts = np.array(zpts, dtype=np.float32)
             if upper_limits is None:
                 upper_limits = np.zeros_like(fluxes, dtype=bool)
 
@@ -361,45 +374,60 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             )
             self._ts.remove_rows(remove_ind)
 
-    def plot(self, ax: Axes, formatter: Optional[Formatter] = None) -> Axes:
+    def plot(
+        self,
+        ax: Axes,
+        formatter: Optional[Formatter] = None,
+        mags: bool = True,
+    ) -> Axes:
         """Plot a single light curve.
         Face and edge colors determined by formatter.
+
+        If mags is True, plot magnitudes. If not, plot fluxes.
         """
         if formatter is None:
-            ax.errorbar(
-                self.times,
-                self.fluxes,
-                yerr=self.flux_errors,
-                c="k",
-                fmt="none",
-                zorder=500,
-            )
-            ax.scatter(
-                self.times,
-                self.fluxes,
-                c="b",
-                edgecolor="k",
-                marker="o",
-                zorder=1000,
-            )
-            return ax
+            formatter = Formatter()
+
+        if mags:
+            vals = self.mags
+            val_errs = self.mag_errors
+            ax.set_ylabel("Magnitude")
+            ax.invert_yaxis()
+        else:
+            vals = self.fluxes
+            val_errs = self.flux_errors
+            ax.set_ylabel("Flux")
 
         ax.errorbar(
-            self.times,
-            self.fluxes,
-            yerr=self.flux_errors,
+            self.times[~self.upper_limit_mask],
+            vals[~self.upper_limit_mask],
+            yerr=val_errs[~self.upper_limit_mask],
             c=formatter.edge_color,
             fmt="none",
             zorder=500,
         )
         ax.scatter(
-            self.times,
-            self.fluxes,
+            self.times[~self.upper_limit_mask],
+            vals[~self.upper_limit_mask],
             c=formatter.face_color,
             edgecolor=formatter.edge_color,
             marker=formatter.marker_style,
+            s=formatter.marker_size,
+            label=str(self._filter),
             zorder=1000,
         )
+        # plot non-detections
+        ax.scatter(
+            self.times[self.upper_limit_mask],
+            vals[self.upper_limit_mask],
+            c=formatter.face_color,
+            edgecolor=formatter.edge_color,
+            marker=formatter.nondetect_marker_style,
+            alpha=formatter.nondetect_alpha,
+            s=formatter.nondetect_size,
+            zorder=1000,
+        )
+
         return ax
 
     def add_observations(self: LightT, rows: list[dict[str, Any]]) -> LightT:

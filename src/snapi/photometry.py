@@ -12,6 +12,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 from .base_classes import MeasurementSet, Plottable
+from .formatter import Formatter
 from .lightcurve import LightCurve
 from .utils import list_datasets
 
@@ -72,14 +73,11 @@ class Photometry(MeasurementSet, Plottable):
 
         self._generate_time_series()
 
-    def _time_series_helper(
-        self,
-    ) -> Tuple[List[str], List[float], List[float]]:
+    def _time_series_helper(self, lc_list: List[LightCurve]) -> Tuple[List[str], List[float], List[float]]:
         """Return arrays of limiting magnitudes, filter centers, and filter widths."""
         filt_centers = []
         filt_widths = []
         filters = []
-        lc_list = list(self._lightcurves)
         for light_curve in lc_list:
             if light_curve.filter is None:
                 filters.extend(
@@ -130,18 +128,20 @@ class Photometry(MeasurementSet, Plottable):
         """Generate time series from set of light curves."""
         if len(self._lightcurves) == 0:
             return None
+
+        lc_list = list(self._lightcurves)
         times = Time(
-            np.concatenate([lc.times for lc in self._lightcurves]),
+            np.concatenate([lc.times for lc in lc_list]),
             format="mjd",
             scale="utc",
         )
-        mags = np.concatenate([lc.mags for lc in self._lightcurves])
-        mag_errors = np.concatenate([lc.mag_errors for lc in self._lightcurves])
-        fluxes = np.concatenate([lc.fluxes for lc in self._lightcurves])
-        flux_errors = np.concatenate([lc.flux_errors for lc in self._lightcurves])
-        non_detections = np.concatenate([lc.upper_limit_mask for lc in self._lightcurves])
+        mags = np.concatenate([lc.mags for lc in lc_list])
+        mag_errors = np.concatenate([lc.mag_errors for lc in lc_list])
+        fluxes = np.concatenate([lc.fluxes for lc in lc_list])
+        flux_errors = np.concatenate([lc.flux_errors for lc in lc_list])
+        non_detections = np.concatenate([lc.upper_limit_mask for lc in lc_list])
 
-        filters, filt_centers, filt_widths = self._time_series_helper()
+        filters, filt_centers, filt_widths = self._time_series_helper(lc_list)
 
         self._ts = TimeSeries(
             {
@@ -168,7 +168,7 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the times of observations
         """
-        return self._ts["time"].to("mjd").value  # type: ignore[no-any-return]
+        return self._ts["time"].mjd  # type: ignore[no-any-return]
 
     @property
     def mags(self) -> NDArray[np.float32]:
@@ -276,7 +276,7 @@ class Photometry(MeasurementSet, Plottable):
         """
         return self  # TODO
 
-    def plot(self, ax: Axes) -> Axes:
+    def plot(self, ax: Axes, formatter: Optional[Formatter] = None, mags: bool = True) -> Axes:
         """Plots the collection of light curves.
 
         Parameters
@@ -289,7 +289,17 @@ class Photometry(MeasurementSet, Plottable):
         Axes
         the axes with the light curves plotted
         """
-        return ax  # TODO
+        if formatter is None:
+            formatter = Formatter()  # make default formatter
+        for lc in self._lightcurves:
+            lc.plot(ax, formatter=formatter, mags=mags)
+            formatter.rotate_colors()
+            formatter.rotate_markers()
+            if mags:
+                ax.invert_yaxis()  # prevent double-inversion
+        if mags:
+            ax.invert_yaxis()
+        return ax
 
     def add_lightcurve(self, light_curve: LightCurve) -> None:
         """Add a light curve to the set of photometry.

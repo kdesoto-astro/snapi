@@ -6,6 +6,7 @@ import numpy as np
 from antares_client.models import Locus  # pylint: disable=import-error
 from antares_client.search import get_by_ztf_object_id, search  # pylint: disable=import-error
 from astropy.coordinates import SkyCoord
+from astropy.table import MaskedColumn
 from astropy.time import Time
 
 from ..lightcurve import Filter, LightCurve
@@ -28,6 +29,7 @@ class ANTARESQueryAgent(QueryAgent):
             "ant_ra",
             "ant_dec",
             "ztf_magzpsci",
+            "ant_maglim",
         ]
         self._int_to_band = {
             1: "g",
@@ -68,6 +70,10 @@ class ANTARESQueryAgent(QueryAgent):
 
     def _locus_helper(self, locus: Locus) -> tuple[float, float, set[LightCurve]]:
         time_series = locus.timeseries[self._ts_cols]
+        for col in self._ts_cols:
+            if isinstance(time_series[col], MaskedColumn):
+                time_series[col] = time_series[col].filled(np.nan)
+
         time_series["time"] = Time(time_series["ant_mjd"], format="mjd", scale="utc")
         time_series.rename_column("ztf_magpsf", "mag")
         time_series.rename_column("ztf_sigmapsf", "mag_err")
@@ -77,9 +83,11 @@ class ANTARESQueryAgent(QueryAgent):
         ra = np.nanmean(time_series["ant_ra"])
         dec = np.nanmean(time_series["ant_dec"])
 
-        time_series.remove_columns(["ant_ra", "ant_dec", "ztf_fid", "ant_mjd"])
-        time_series["non_detection"] = np.zeros(len(time_series), dtype=bool)
-
+        # handle non-detections by setting nan mags to maglim
+        time_series["non_detections"] = np.isnan(time_series["mag"])
+        antlims = time_series[time_series["non_detections"]]["ant_maglim"]
+        time_series["mag"][time_series["non_detections"]] = antlims
+        time_series.remove_columns(["ant_ra", "ant_dec", "ztf_fid", "ant_mjd", "ant_maglim"])
         lcs = set()
         for b in np.unique(bands):
             mask = bands == b
@@ -88,6 +96,7 @@ class ANTARESQueryAgent(QueryAgent):
                 band=self._int_to_band[b],
                 center=np.nan * u.AA,  # pylint: disable=no-member
             )
+            # first deal with detections
             lc = LightCurve(time_series[mask], filt=filt)
             lcs.add(lc)
 
