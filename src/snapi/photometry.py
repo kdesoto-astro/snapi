@@ -4,9 +4,9 @@ from typing import List, Optional, Set, Tuple, Type, TypeVar
 
 import astropy.units as u
 import george
-import numba
 import numpy as np
 import scipy
+from astropy.time import Time
 from astropy.timeseries import TimeSeries
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -72,18 +72,15 @@ class Photometry(MeasurementSet, Plottable):
 
         self._generate_time_series()
 
-    @numba.njit(parallel=True)  # type: ignore
-    def _numba_time_series_helper(
+    def _time_series_helper(
         self,
-    ) -> Tuple[List[str], List[float], List[float], List[float]]:
+    ) -> Tuple[List[str], List[float], List[float]]:
         """Return arrays of limiting magnitudes, filter centers, and filter widths."""
-        lim_mags = []
         filt_centers = []
         filt_widths = []
         filters = []
         lc_list = list(self._lightcurves)
-        for i in numba.prange(len(lc_list)):
-            light_curve = lc_list[i]
+        for light_curve in lc_list:
             if light_curve.filter is None:
                 filters.extend(
                     [
@@ -95,20 +92,6 @@ class Photometry(MeasurementSet, Plottable):
                 filters.extend(
                     [
                         str(light_curve.filter),
-                    ]
-                    * len(light_curve.times)
-                )
-            if light_curve.filter is None or light_curve.filter.lim_mag is None:
-                lim_mags.extend(
-                    [
-                        np.nan,
-                    ]
-                    * len(light_curve.times)
-                )
-            else:
-                lim_mags.extend(
-                    [
-                        light_curve.filter.lim_mag,
                     ]
                     * len(light_curve.times)
                 )
@@ -141,30 +124,37 @@ class Photometry(MeasurementSet, Plottable):
                     * len(light_curve.times)
                 )
 
-        return (filters, lim_mags, filt_centers, filt_widths)
+        return (filters, filt_centers, filt_widths)
 
     def _generate_time_series(self) -> None:
         """Generate time series from set of light curves."""
         if len(self._lightcurves) == 0:
             return None
-        times = np.concatenate([lc.times for lc in self._lightcurves])
+        times = Time(
+            np.concatenate([lc.times for lc in self._lightcurves]),
+            format="mjd",
+            scale="utc",
+        )
         mags = np.concatenate([lc.mags for lc in self._lightcurves])
         mag_errors = np.concatenate([lc.mag_errors for lc in self._lightcurves])
         fluxes = np.concatenate([lc.fluxes for lc in self._lightcurves])
         flux_errors = np.concatenate([lc.flux_errors for lc in self._lightcurves])
+        non_detections = np.concatenate([lc.upper_limit_mask for lc in self._lightcurves])
 
-        filters, lim_mags, filt_centers, filt_widths = self._numba_time_series_helper()
+        filters, filt_centers, filt_widths = self._time_series_helper()
 
         self._ts = TimeSeries(
-            time=times,
-            flux=fluxes,
-            flux_err=flux_errors,
-            mag=mags,
-            mag_err=mag_errors,
-            filters=filters,
-            lim_mags=lim_mags,
-            filt_centers=filt_centers,
-            filt_widths=filt_widths,
+            {
+                "time": times,
+                "flux": fluxes,
+                "flux_err": flux_errors,
+                "mag": mags,
+                "mag_err": mag_errors,
+                "non_detections": non_detections,
+                "filters": filters,
+                "filt_centers": filt_centers,
+                "filt_widths": filt_widths,
+            }
         )
         self._ts.sort("time")
         return None
@@ -255,7 +245,7 @@ class Photometry(MeasurementSet, Plottable):
         TimeSeries
         the time series object
         """
-        return self._ts
+        return self._ts.copy()
 
     @property
     def light_curves(self) -> Set[LightCurve]:
@@ -314,7 +304,6 @@ class Photometry(MeasurementSet, Plottable):
                 lc.merge(light_curve)
                 self._generate_time_series()
                 return None
-
         self._lightcurves.add(copy.deepcopy(light_curve))
         self._generate_time_series()  # update time series
         return None

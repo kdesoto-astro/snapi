@@ -6,6 +6,7 @@ import astropy.units as u
 import numba
 import numpy as np
 from astropy.table.table import QTable
+from astropy.time import Time
 from astropy.timeseries import TimeSeries
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -154,14 +155,16 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         filt: Optional[Filter] = None,
     ) -> None:
         self._filter = filt
-        self._ts_cols = ["flux", "flux_unc", "mag", "mag_unc", "zpt", "non_detections"]
+        self._ts_cols = ["flux", "flux_unc", "mag", "mag_unc", "zpt"]
         if isinstance(times, QTable):
             if "time" not in times.colnames:
                 raise ValueError("TimeSeries must have a 'time' column!")
             for k in self._ts_cols:
                 if k not in times.colnames:
                     times[k] = np.nan * np.ones(len(times))
-            self._ts = TimeSeries(times[["time", *self._ts_cols]])  # make copy
+                if "non_detections" not in times.colnames:
+                    times["non_detections"] = np.zeros(len(times), dtype=bool)
+            self._ts = TimeSeries(times[["time", *self._ts_cols, "non_detections"]])  # make copy
 
         else:
             if fluxes is None:
@@ -174,6 +177,9 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                 mag_errs = np.nan * np.ones_like(fluxes)
             if zpts is None:
                 zpts = np.nan * np.ones_like(fluxes)
+            if upper_limits is None:
+                upper_limits = np.zeros_like(fluxes, dtype=bool)
+
             self._ts = TimeSeries(
                 {
                     "time": times,
@@ -312,14 +318,19 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         return self._filter
 
     @property
+    def upper_limit_mask(self) -> Any:
+        """Return boolean array of upper limits."""
+        return self._ts["non_detections"].value  # pylint: disable=no-member; type: ignore
+
+    @property
     def non_detections(self) -> TimeSeries:
         """Return non-detection observations."""
-        return self._ts.copy()["non_detections"]
+        return self._ts[self.upper_limit_mask].copy()  # pylint: disable=invalid-unary-operand-type
 
     @property
     def detections(self) -> Optional[Any]:
         """Return detection observations."""
-        return ~self._ts.copy()["non_detections"]
+        return self._ts[~self.upper_limit_mask].copy()  # pylint: disable=invalid-unary-operand-type
 
     @property
     def peak(self) -> dict[str, Any]:
@@ -422,14 +433,19 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         if self._filter != other.filter:
             raise ValueError("Filters must be the same to merge light curves!")
 
-        non_repeat_idxs = np.where(self.times != other.times)
+        non_repeat_idxs = ~np.isin(other.times, self.times)
 
-        new_times = np.concatenate((self.times, other.times[non_repeat_idxs]))
+        new_times = Time(
+            np.concatenate((self.times, other.times[non_repeat_idxs])),
+            format="mjd",
+            scale="utc",
+        )
         new_fluxes = np.concatenate((self.fluxes, other.fluxes[non_repeat_idxs]))
         new_flux_errs = np.concatenate((self.flux_errors, other.flux_errors[non_repeat_idxs]))
         new_mags = np.concatenate((self.mags, other.mags[non_repeat_idxs]))
         new_mag_errs = np.concatenate((self.mag_errors, other.mag_errors[non_repeat_idxs]))
         new_zpts = np.concatenate((self.zeropoints, other.zeropoints[non_repeat_idxs]))
+        new_non_detections = np.concatenate((self.upper_limit_mask, other.upper_limit_mask[non_repeat_idxs]))
 
         self._ts = TimeSeries(
             {
@@ -439,6 +455,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                 "mag": new_mags,
                 "mag_unc": new_mag_errs,
                 "zpt": new_zpts,
+                "non_detections": new_non_detections,
             }
         )
         self._sort()

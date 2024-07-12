@@ -5,7 +5,7 @@ import astropy.units as u
 import numpy as np
 import pandas as pd
 from alerce.core import Alerce  # pylint: disable=import-error
-from alerce.exceptions import APIError
+from alerce.exceptions import APIError  # pylint: disable=import-error
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
@@ -22,7 +22,11 @@ class ALeRCEQueryAgent(QueryAgent):
     def __init__(self) -> None:
         self._client = Alerce()
         self._radius = 3  # default search radius in arcsec
-        self._phot_colnames = ["mjd", "fid", "mag", "e_mag", "magzpsci"]
+        self._int_to_band = {
+            1: "g",
+            2: "r",
+            3: "i",
+        }
 
     def _photometry_helper(self, objname: str) -> tuple[set[LightCurve], bool]:
         """
@@ -39,9 +43,15 @@ class ALeRCEQueryAgent(QueryAgent):
                 all_detections = pd.concat([detections, forced_detections], join="inner")
             except KeyError:
                 all_detections = detections
-            lcs = set()
+            lcs: set[LightCurve] = set()
+            if len(all_detections) == 0:
+                return lcs, False
             for b in np.unique(all_detections["fid"]):
-                filt = Filter(instrument="ZTF", band=b, center=np.nan * u.AA)  # pylint: disable=no-member
+                filt = Filter(
+                    instrument="ZTF",
+                    band=self._int_to_band[b],
+                    center=np.nan * u.AA,  # pylint: disable=no-member
+                )  # pylint: disable=no-member
                 mask = all_detections["fid"] == b
                 lc = LightCurve(
                     times=Time(all_detections[mask]["mjd"], format="mjd"),
@@ -76,22 +86,17 @@ class ALeRCEQueryAgent(QueryAgent):
         """
         super().query_by_name(names, **kwargs)  # initial checks
         names_arr = np.atleast_1d(names)
+        print(names_arr)
         results = []
 
         for name in names_arr:
             try:
-                photometry, success = self._photometry_helper(name)
-                if success:
-                    lcs = photometry
-                else:
-                    lcs = set()
-
+                photometry, _ = self._photometry_helper(name)
                 features = self._client.query_object(name)
                 ra = features["meanra"]
                 dec = features["meandec"]
 
                 redshift = self._client.catshtm_redshift(ra, dec, self._radius)
-
                 results.append(
                     self._format_query_result(
                         {
@@ -99,7 +104,7 @@ class ALeRCEQueryAgent(QueryAgent):
                             "coords": SkyCoord(
                                 ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
                             ),  # pylint: disable=no-member
-                            "light_curves": lcs,
+                            "light_curves": photometry,
                             "redshift": redshift,
                         }
                     )
@@ -107,6 +112,7 @@ class ALeRCEQueryAgent(QueryAgent):
             except APIError:
                 results.append(QueryResult())
 
+        print(results)
         return results, True
 
     def query_by_coords(self, coords: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
