@@ -160,7 +160,7 @@ class Transient(Base):
             redshift = f.attrs.get("redshift")
             spec_class = f.attrs.get("spec_class")
             internal_names = set(f.attrs.get("internal_names", default=set()))
-
+            
         return cls(
             ra=ra,
             dec=dec,

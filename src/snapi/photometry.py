@@ -8,6 +8,7 @@ import numpy as np
 import scipy
 from astropy.time import Time
 from astropy.timeseries import LombScargleMultiband, TimeSeries
+
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
@@ -128,7 +129,6 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """Generate time series from set of light curves."""
         if len(self._lightcurves) == 0:
             return None
-
         lc_list = list(self._lightcurves)
         times = Time(
             np.concatenate([lc.times for lc in lc_list]),

@@ -85,6 +85,7 @@ class ALeRCEQueryAgent(QueryAgent):
         """
         super().query_by_name(names, **kwargs)  # initial checks
         names_arr = np.atleast_1d(names)
+        print(names_arr)
         results = []
 
         for name in names_arr:
@@ -110,6 +111,7 @@ class ALeRCEQueryAgent(QueryAgent):
             except APIError:
                 results.append(QueryResult())
 
+        print(results)
         return results, True
 
     def query_by_coords(self, coords: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
