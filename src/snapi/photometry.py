@@ -1,17 +1,19 @@
 """Stores Photometry class and helper functions."""
 import copy
-from typing import List, Optional, Set, Tuple, Type, TypeVar
+from typing import Any, List, Optional, Set, Tuple, Type, TypeVar
 
 import astropy.units as u
 import george
 import numpy as np
 import scipy
 from astropy.time import Time
-from astropy.timeseries import TimeSeries
+from astropy.timeseries import LombScargleMultiband, TimeSeries
+
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 from .base_classes import MeasurementSet, Plottable
+from .formatter import Formatter
 from .lightcurve import LightCurve
 from .utils import list_datasets
 
@@ -59,7 +61,7 @@ def generate_gp(
     return gaussian_process
 
 
-class Photometry(MeasurementSet, Plottable):
+class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-methods
     """Contains collection of LightCurve objects."""
 
     def __init__(self, lcs: Optional[set[LightCurve]] = None) -> None:
@@ -72,14 +74,11 @@ class Photometry(MeasurementSet, Plottable):
 
         self._generate_time_series()
 
-    def _time_series_helper(
-        self,
-    ) -> Tuple[List[str], List[float], List[float]]:
+    def _time_series_helper(self, lc_list: List[LightCurve]) -> Tuple[List[str], List[float], List[float]]:
         """Return arrays of limiting magnitudes, filter centers, and filter widths."""
         filt_centers = []
         filt_widths = []
         filters = []
-        lc_list = list(self._lightcurves)
         for light_curve in lc_list:
             if light_curve.filter is None:
                 filters.extend(
@@ -130,18 +129,19 @@ class Photometry(MeasurementSet, Plottable):
         """Generate time series from set of light curves."""
         if len(self._lightcurves) == 0:
             return None
+        lc_list = list(self._lightcurves)
         times = Time(
-            np.concatenate([lc.times for lc in self._lightcurves]),
+            np.concatenate([lc.times for lc in lc_list]),
             format="mjd",
             scale="utc",
         )
-        mags = np.concatenate([lc.mags for lc in self._lightcurves])
-        mag_errors = np.concatenate([lc.mag_errors for lc in self._lightcurves])
-        fluxes = np.concatenate([lc.fluxes for lc in self._lightcurves])
-        flux_errors = np.concatenate([lc.flux_errors for lc in self._lightcurves])
-        non_detections = np.concatenate([lc.upper_limit_mask for lc in self._lightcurves])
+        mags = np.concatenate([lc.mags for lc in lc_list])
+        mag_errors = np.concatenate([lc.mag_errors for lc in lc_list])
+        fluxes = np.concatenate([lc.fluxes for lc in lc_list])
+        flux_errors = np.concatenate([lc.flux_errors for lc in lc_list])
+        non_detections = np.concatenate([lc.upper_limit_mask for lc in lc_list])
 
-        filters, filt_centers, filt_widths = self._time_series_helper()
+        filters, filt_centers, filt_widths = self._time_series_helper(lc_list)
 
         self._ts = TimeSeries(
             {
@@ -168,7 +168,7 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the times of observations
         """
-        return self._ts["time"].to("mjd").value  # type: ignore[no-any-return]
+        return self._ts["time"].copy().mjd  # type: ignore[no-any-return]
 
     @property
     def mags(self) -> NDArray[np.float32]:
@@ -179,7 +179,7 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the magnitudes of observations
         """
-        return self._ts["mag"].value  # type: ignore[no-any-return]
+        return self._ts["mag"].copy().value  # type: ignore[no-any-return]
 
     @property
     def fluxes(self) -> NDArray[np.float32]:
@@ -190,7 +190,7 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the fluxes of observations
         """
-        return self._ts["flux"].value  # type: ignore[no-any-return]
+        return self._ts["flux"].copy().value  # type: ignore[no-any-return]
 
     @property
     def mag_errors(self) -> NDArray[np.float32]:
@@ -201,7 +201,7 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the magnitude errors of observations
         """
-        return self._ts["mag_err"].value  # type: ignore[no-any-return]
+        return self._ts["mag_err"].copy().value  # type: ignore[no-any-return]
 
     @property
     def flux_errors(self) -> NDArray[np.float32]:
@@ -212,7 +212,7 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the flux errors of observations
         """
-        return self._ts["flux_err"].value  # type: ignore[no-any-return]
+        return self._ts["flux_err"].copy().value  # type: ignore[no-any-return]
 
     @property
     def filters(self) -> NDArray[str]:  # type: ignore
@@ -223,7 +223,7 @@ class Photometry(MeasurementSet, Plottable):
         List[str]
         the filters of observations
         """
-        return self._ts["filters"]  # type: ignore[no-any-return]
+        return self._ts["filters"].copy().value  # type: ignore[no-any-return]
 
     @property
     def lim_mags(self) -> NDArray[np.float32]:
@@ -234,18 +234,40 @@ class Photometry(MeasurementSet, Plottable):
         NDArray[np.float32]
         the limiting magnitudes of observations
         """
-        return self._ts["lim_mags"].value  # type: ignore[no-any-return]
+        return self._ts["lim_mags"].copy().value  # type: ignore[no-any-return]
 
     @property
-    def time_series(self) -> TimeSeries:
-        """Return the time series object.
+    def upper_limit_mask(self) -> NDArray[np.bool_]:
+        """Return mask of upper limits.
+
+        Returns
+        -------
+        NDArray[bool]
+        the mask of upper limits
+        """
+        return self._ts["non_detections"].copy().value  # type: ignore[no-any-return]
+
+    @property
+    def detections(self) -> TimeSeries:
+        """Return the detections in photometry.
 
         Returns
         -------
         TimeSeries
         the time series object
         """
-        return self._ts.copy()
+        return self._ts[~self._ts["non_detections"]].copy()
+
+    @property
+    def non_detections(self) -> TimeSeries:
+        """Return the non-detections in photometry.
+
+        Returns
+        -------
+        TimeSeries
+        the time series object
+        """
+        return self._ts[self._ts["non_detections"]].copy()
 
     @property
     def light_curves(self) -> Set[LightCurve]:
@@ -274,9 +296,46 @@ class Photometry(MeasurementSet, Plottable):
         the Photometry object with only the
         desired instrument's measurements
         """
-        return self  # TODO
+        filtered_lcs = {
+            lc for lc in self._lightcurves if (lc.filter is not None and lc.filter.instrument == instrument)
+        }
+        return self.__class__(filtered_lcs)
 
-    def plot(self, ax: Axes) -> Axes:
+    def filter(self: PhotT, filts: Any) -> PhotT:
+        """Return new Photometry with only light curves
+        from filters in 'filts.'
+        """
+        filtered_lcs = {lc for lc in self._lightcurves if str(lc.filter) in filts}
+        return self.__class__(filtered_lcs)
+
+    def phase(
+        self: PhotT, t0: Optional[float] = None, periodic: bool = False, period: Optional[float] = None
+    ) -> None:
+        """Return new Photometry with light curves phased.
+        By default phases max around 0. If periodic,
+        will either use provided period or attempt to
+        estimate one.
+        """
+        if periodic and period is None:
+            period = self.calculate_period()
+        if t0 is None:
+            t0 = np.median([l.peak["time"].mjd for l in self._lightcurves])
+        for lc in self._lightcurves:
+            lc.phase(t0=t0, periodic=periodic, period=period)
+
+    def calculate_period(self) -> float:
+        """Estimate multi-band period of light curves in set."""
+        detections = self.detections
+        frequency, power = LombScargleMultiband(
+            detections["time"].mjd,
+            detections["mag"],
+            detections["filters"],
+            detections["mag_err"],
+        ).autopower()
+        best_freq: float = frequency[np.argmax(power)]
+        return 1.0 / best_freq
+
+    def plot(self, ax: Axes, formatter: Optional[Formatter] = None, mags: bool = True) -> Axes:
         """Plots the collection of light curves.
 
         Parameters
@@ -289,7 +348,17 @@ class Photometry(MeasurementSet, Plottable):
         Axes
         the axes with the light curves plotted
         """
-        return ax  # TODO
+        if formatter is None:
+            formatter = Formatter()  # make default formatter
+        for lc in self._lightcurves:
+            lc.plot(ax, formatter=formatter, mags=mags)
+            formatter.rotate_colors()
+            formatter.rotate_markers()
+            if mags:
+                ax.invert_yaxis()  # prevent double-inversion
+        if mags:
+            ax.invert_yaxis()
+        return ax
 
     def add_lightcurve(self, light_curve: LightCurve) -> None:
         """Add a light curve to the set of photometry.
@@ -486,10 +555,10 @@ class Photometry(MeasurementSet, Plottable):
         append = False
         for lc in self._lightcurves:
             if not append:
-                lc.save(filename, path=f"{path}/{str(lc.filter)}")
+                lc.save(filename, path=f"/{path}/{str(lc.filter)}")
                 append = True
             else:
-                lc.save(filename, path=f"{path}/{str(lc.filter)}", append=True)
+                lc.save(filename, path=f"/{path}/{str(lc.filter)}", append=True)
 
     @classmethod
     def load(cls: Type[PhotT], filename: str, path: str = "photometry") -> PhotT:
@@ -502,8 +571,11 @@ class Photometry(MeasurementSet, Plottable):
         """
         lcs = set()
         # get all paths that start with path
-        lc_path_list = [lc_path for lc_path in list_datasets(filename) if lc_path.startswith(path)]
-
+        lc_path_list = [
+            lc_path
+            for lc_path in list_datasets(filename)
+            if (lc_path.startswith(path) and "__table_column_meta__" not in lc_path)
+        ]
         for lc_path in lc_path_list:
             lc = LightCurve.load(filename, path=lc_path)
             lcs.add(lc)

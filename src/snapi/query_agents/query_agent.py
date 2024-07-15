@@ -39,7 +39,9 @@ class QueryAgent(abc.ABC):
         """
         Query transient objects by coordinates.
         """
-        if not isinstance(coords, SkyCoord) and not isinstance(list(coords)[0], SkyCoord):
+        if not isinstance(coords, SkyCoord) and not (
+            isinstance(coords, list) and isinstance(list(coords)[0], SkyCoord)
+        ):
             raise ValueError("coords must be a SkyCoord or an iterable of SkyCoords")
 
         return [], False

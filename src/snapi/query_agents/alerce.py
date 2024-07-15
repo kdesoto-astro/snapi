@@ -57,7 +57,7 @@ class ALeRCEQueryAgent(QueryAgent):
                     times=Time(all_detections[mask]["mjd"], format="mjd"),
                     mags=all_detections[mask].get("mag", np.nan * np.ones(len(all_detections[mask]))),
                     mag_errs=all_detections[mask].get("e_mag", np.nan * np.ones(len(all_detections[mask]))),
-                    upper_limits=np.zeros(len(all_detections[mask])),
+                    upper_limits=np.zeros(len(all_detections[mask]), dtype=bool),
                     zpts=all_detections[mask].get("magzpsci", np.nan * np.ones(len(all_detections[mask]))),
                     filt=filt,
                 )
@@ -71,7 +71,6 @@ class ALeRCEQueryAgent(QueryAgent):
         """
         Format query result into QueryResult object.
         """
-        print(query_result["light_curves"])
         return QueryResult(
             objname=query_result["objname"],
             internal_names=set(),

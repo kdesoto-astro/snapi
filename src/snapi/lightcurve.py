@@ -7,7 +7,7 @@ import numba
 import numpy as np
 from astropy.table.table import QTable
 from astropy.time import Time
-from astropy.timeseries import TimeSeries
+from astropy.timeseries import LombScargle, TimeSeries
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
@@ -154,6 +154,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         upper_limits: Optional[Iterable[bool]] = None,
         filt: Optional[Filter] = None,
     ) -> None:
+        self._phased = False
         self._filter = filt
         self._ts_cols = ["flux", "flux_unc", "mag", "mag_unc", "zpt"]
         if isinstance(times, QTable):
@@ -162,21 +163,34 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             for k in self._ts_cols:
                 if k not in times.colnames:
                     times[k] = np.nan * np.ones(len(times))
-                if "non_detections" not in times.colnames:
-                    times["non_detections"] = np.zeros(len(times), dtype=bool)
+                # convert all columns in self._ts_col to np.float32
+                times[k] = times[k].astype(np.float32)
+            if "non_detections" not in times.colnames:
+                times["non_detections"] = np.zeros(len(times), dtype=bool)
+
             self._ts = TimeSeries(times[["time", *self._ts_cols, "non_detections"]])  # make copy
 
         else:
             if fluxes is None:
-                fluxes = (np.nan * np.ones(len(times))).astype(np.float32)
+                fluxes = np.nan * np.ones(len(times))
+            else:
+                fluxes = np.array(fluxes, dtype=np.float32)
             if flux_errs is None:
                 flux_errs = np.nan * np.ones_like(fluxes)
+            else:
+                flux_errs = np.array(flux_errs, dtype=np.float32)
             if mags is None:
                 mags = np.nan * np.ones_like(fluxes)
+            else:
+                mags = np.array(mags, dtype=np.float32)
             if mag_errs is None:
                 mag_errs = np.nan * np.ones_like(fluxes)
+            else:
+                mag_errs = np.array(mag_errs, dtype=np.float32)
             if zpts is None:
                 zpts = np.nan * np.ones_like(fluxes)
+            else:
+                zpts = np.array(zpts, dtype=np.float32)
             if upper_limits is None:
                 upper_limits = np.zeros_like(fluxes, dtype=bool)
 
@@ -328,7 +342,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         return self._ts[self.upper_limit_mask].copy()  # pylint: disable=invalid-unary-operand-type
 
     @property
-    def detections(self) -> Optional[Any]:
+    def detections(self) -> TimeSeries:
         """Return detection observations."""
         return self._ts[~self.upper_limit_mask].copy()  # pylint: disable=invalid-unary-operand-type
 
@@ -339,14 +353,35 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         """
         return self._ts[np.argmax(self._ts["flux"])].as_dict()  # type: ignore[no-any-return]
 
-    def phase(self, phase_0: Optional[float] = None) -> None:
+    def phase(
+        self, t0: Optional[float] = None, periodic: bool = False, period: Optional[float] = None
+    ) -> None:
         """
         Phases light curve by t0, which is assumed
         to be in days.
         """
-        if phase_0 is None:
-            phase_0 = self.peak["time"]
-        self._ts["time"] -= phase_0 * u.d  # pylint: disable=no-member
+        if t0 is None:
+            t0 = self.peak["time"]
+        self._ts["time"] -= t0 * u.d  # pylint: disable=no-member
+
+        if periodic:
+            if period is None:
+                period = self.calculate_period()
+            self._ts["time"] %= period
+        self._phased = True
+
+    def calculate_period(self) -> float:
+        """Calculate period of light curve.
+        Uses LombScargle periodogram.
+        """
+        ls = LombScargle(
+            self.detections["time"],
+            self.detections["mag"],
+            self.detections["mag_unc"],
+        )
+        frequency, power = ls.autopower()
+        best_freq: float = frequency[np.argmax(power)]
+        return 1.0 / best_freq
 
     def truncate(self, max_t: Optional[float] = np.inf, min_t: Optional[float] = -np.inf) -> None:
         """Truncate light curve between min_t and max_t days."""
@@ -361,45 +396,63 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             )
             self._ts.remove_rows(remove_ind)
 
-    def plot(self, ax: Axes, formatter: Optional[Formatter] = None) -> Axes:
+    def plot(
+        self,
+        ax: Axes,
+        formatter: Optional[Formatter] = None,
+        mags: bool = True,
+    ) -> Axes:
         """Plot a single light curve.
         Face and edge colors determined by formatter.
+
+        If mags is True, plot magnitudes. If not, plot fluxes.
         """
         if formatter is None:
-            ax.errorbar(
-                self.times,
-                self.fluxes,
-                yerr=self.flux_errors,
-                c="k",
-                fmt="none",
-                zorder=500,
-            )
-            ax.scatter(
-                self.times,
-                self.fluxes,
-                c="b",
-                edgecolor="k",
-                marker="o",
-                zorder=1000,
-            )
-            return ax
+            formatter = Formatter()
+        if self._phased:
+            ax.set_xlabel("Phase (days)")
+        else:
+            ax.set_xlabel("Time (MJD)")
+        if mags:
+            vals = self.mags
+            val_errs = self.mag_errors
+            ax.set_ylabel("Magnitude")
+            ax.invert_yaxis()
+        else:
+            vals = self.fluxes
+            val_errs = self.flux_errors
+            ax.set_ylabel("Flux")
 
         ax.errorbar(
-            self.times,
-            self.fluxes,
-            yerr=self.flux_errors,
+            self.times[~self.upper_limit_mask],
+            vals[~self.upper_limit_mask],
+            yerr=val_errs[~self.upper_limit_mask],
             c=formatter.edge_color,
             fmt="none",
             zorder=500,
         )
         ax.scatter(
-            self.times,
-            self.fluxes,
+            self.times[~self.upper_limit_mask],
+            vals[~self.upper_limit_mask],
             c=formatter.face_color,
             edgecolor=formatter.edge_color,
             marker=formatter.marker_style,
+            s=formatter.marker_size,
+            label=str(self._filter),
             zorder=1000,
         )
+        # plot non-detections
+        ax.scatter(
+            self.times[self.upper_limit_mask],
+            vals[self.upper_limit_mask],
+            c=formatter.face_color,
+            edgecolor=formatter.edge_color,
+            marker=formatter.nondetect_marker_style,
+            alpha=formatter.nondetect_alpha,
+            s=formatter.nondetect_size,
+            zorder=1000,
+        )
+
         return ax
 
     def add_observations(self: LightT, rows: list[dict[str, Any]]) -> LightT:
@@ -537,17 +590,18 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             Whether to append to existing file.
         """
         if path is None:
-            path = str(self.filter)
+            path = "/" + str(self.filter)
         table = self._ts.copy()
         if self._filter is not None:
             table.meta["instrument"] = self._filter.instrument
             table.meta["band"] = self._filter.band
             table.meta["center"] = self._filter.center.value  # in Angstroms
-            table.meta["width"] = self._filter.width.value  # in Angstroms
+            if self._filter.width is not None:
+                table.meta["width"] = self._filter.width.value
         if append:
-            table.write(file_name, format="hdf5", path=path, append=True)
+            table.write(file_name, format="hdf5", path=path, append=True, serialize_meta=True)
         else:
-            table.write(file_name, format="hdf5", path=path, overwrite=True)
+            table.write(file_name, format="hdf5", path=path, overwrite=True, serialize_meta=True)
 
     @classmethod
     def load(cls: Type[LightT], file_name: str, path: Optional[str] = None) -> LightT:
@@ -560,13 +614,22 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                 raise ValueError("Multiple datasets found in file. Please specify path.")
             path = paths[0]
 
-        time_series = TimeSeries.read(file_name, format="hdf5", path=path, time_column="mjd")
+        time_series = TimeSeries.read(
+            file_name, format="hdf5", path=path, time_column="time", time_format="mjd"
+        )
         if "instrument" in time_series.meta:
-            extracted_filter = Filter(
-                time_series.meta["instrument"],
-                time_series.meta["band"],
-                time_series.meta["center"] * u.AA,  # pylint: disable=no-member
-                time_series.meta["width"] * u.AA,  # pylint: disable=no-member,
-            )
+            try:
+                extracted_filter = Filter(
+                    time_series.meta["instrument"],
+                    time_series.meta["band"],
+                    time_series.meta["center"] * u.AA,  # pylint: disable=no-member
+                    time_series.meta["width"] * u.AA,  # pylint: disable=no-member,
+                )
+            except TypeError:
+                extracted_filter = Filter(
+                    time_series.meta["instrument"],
+                    time_series.meta["band"],
+                    time_series.meta["center"] * u.AA,  # pylint: disable=no-member
+                )
             return cls(time_series, filt=extracted_filter)
         return cls(time_series)

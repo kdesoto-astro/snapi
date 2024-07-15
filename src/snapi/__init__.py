@@ -1,9 +1,10 @@
 from snapi.base_classes import Base, MeasurementSet, Plottable
 
+from .formatter import Formatter
 from .image import Image
 
 # from snapi.host_galaxy import HostGalaxy
-from .lightcurve import LightCurve
+from .lightcurve import Filter, LightCurve
 from .photometry import Photometry
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
@@ -19,4 +20,6 @@ __all__ = [
     "LightCurve",
     "Spectrum",
     "Transient",
+    "Formatter",
+    "Filter",
 ]

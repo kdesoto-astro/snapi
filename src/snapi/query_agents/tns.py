@@ -7,6 +7,7 @@ from typing import Any, List, Mapping, Optional
 
 import astropy.units as u
 import numpy as np
+import pandas as pd
 import requests
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
@@ -44,6 +45,20 @@ class TNSQueryAgent(QueryAgent):
         self._tns_header = {"User-Agent": header_phrase}
         self._timeout = 30.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
+        self._data_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "data",
+            "tns_public_objects_05_22_24.csv",
+        )
+        try:
+            self._local_df = pd.read_csv(self._data_path)
+            self._df_coords = SkyCoord(
+                ra=self._local_df["ra"].values * u.deg,  # pylint: disable=no-member
+                dec=self._local_df["declination"].values * u.deg,  # pylint: disable=no-member
+            )
+        except FileNotFoundError:
+            self._local_df = None  # type: ignore
+            self._df_coords = None
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
         """
@@ -54,12 +69,13 @@ class TNSQueryAgent(QueryAgent):
         dec = query_result["decdeg"] * u.deg  # pylint: disable=no-member
         coords = SkyCoord(ra=ra, dec=dec, frame="icrs")
         redshift = query_result["redshift"]
-        internal_names = [q.strip() for q in query_result["internal_names"].split(",")]
-        internal_names.remove("")
+        internal_names = [q.strip() for q in str(query_result["internal_names"]).split(",")]
         light_curves = set()
         photometry_arr = query_result["photometry"]
         lc_dict: dict[str, dict[str, Any]] = {}
         for phot_dict in photometry_arr:
+            if phot_dict["instrument"]["name"] == "ZTF-Cam":
+                phot_dict["instrument"]["name"] = "ZTF"  # some hard coding
             filt = Filter(
                 instrument=phot_dict["instrument"]["name"],
                 band=phot_dict["filters"]["name"],
@@ -100,7 +116,6 @@ class TNSQueryAgent(QueryAgent):
                 filt=phot_dict["filt"],
             )
             light_curves.add(light_curve)
-
         query_result_object = QueryResult(
             objname=objname,
             internal_names=set(internal_names),
@@ -174,10 +189,34 @@ class TNSQueryAgent(QueryAgent):
         names_arr = np.atleast_1d(names)
         results = []
 
+        if "local" in kwargs and kwargs["local"]:
+            if self._local_df is None:
+                return results, False
+            matches = self._local_df.isin(names_arr)["name"].to_numpy()
+            r_all = self._local_df[matches]
+            for i in range(len(r_all)):
+                objname = r_all["name"][i]
+                coord = self._df_coords[matches][i]
+                internal_names = [q.strip() for q in str(r_all["internal_names"][i]).split(",")]
+
+                results.append(
+                    QueryResult(
+                        objname=objname,
+                        internal_names=set(internal_names),
+                        coordinates=coord,
+                        redshift=r_all["redshift"][i],
+                    )
+                )
+            if len(results) > 0:
+                return results, True
+            return results, False
+
+        success = False
         for name in names_arr:
             r = self._tns_object_helper(name)
-            if "objname" in r:
+            if ("objname" in r) and isinstance(r["objname"], str):
                 results.append(self._format_query_result(r))
+                success = True
                 continue
             # if no results, try searching by internal name
             r = self._tns_search_helper(internal_name=name)
@@ -185,18 +224,69 @@ class TNSQueryAgent(QueryAgent):
                 result = r[0]
                 obj_query = self._tns_object_helper(result["objname"])
                 results.append(self._format_query_result(obj_query))
+                success = True
             else:
                 results.append(QueryResult())
 
-        return results, True
+        return results, success
 
     def query_by_coords(self, coords: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
         """
         Query transient objects by coordinates.
+
+        If "local" kwarg is True, consults local database for object information.
+        Is much faster, but also will not include most recent events or photometry/
+        spectroscopy.
         """
-        super().query_by_coords(coords, **kwargs)  # initial checks
+        try:
+            super().query_by_coords(coords, **kwargs)  # initial checks
+        except ValueError:
+            return [], False
         coords_arr = np.atleast_1d(coords)
         results = []
+
+        if "local" in kwargs and kwargs["local"]:
+            if self._local_df is None:
+                return results, False
+            for coord in coords_arr:
+                rad = self._radius * u.arcsec  # pylint: disable=no-member
+                # Perform the cone search
+                separation = coord.separation(self._df_coords)
+                matches = separation <= rad
+
+                # Filter the DataFrame to get the matching entries
+                r = self._local_df[matches]
+
+                while len(r) > 1:
+                    rad /= 2
+                    separation = coord.separation(self._df_coords)
+                    matches = separation <= rad
+
+                    # Filter the DataFrame to get the matching entries
+                    r = self._local_df[matches]
+
+                if len(r) == 1:
+                    objname = r["name"].item()
+                    final_coord = self._df_coords[matches]
+                    internal_names = [q.strip() for q in str(r["internal_names"].item()).split(",")]
+                    if r["type"].item() == "nan":
+                        spec_class = r["type"].item()
+                    else:
+                        spec_class = r["name_prefix"].item()
+                    results.append(
+                        QueryResult(
+                            objname=objname,
+                            internal_names=set(internal_names),
+                            coordinates=final_coord,
+                            redshift=r["redshift"].item(),
+                            spec_class=spec_class,
+                        )
+                    )
+                else:
+                    results.append(QueryResult())
+
+            return results, True
+
         for coord in coords_arr:
             ra_formatted = coord.ra.to_string(
                 unit=u.hourangle, sep=":", pad=True, precision=2  # pylint: disable=no-member
