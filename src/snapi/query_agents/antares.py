@@ -43,7 +43,9 @@ class ANTARESQueryAgent(QueryAgent):
         """
         return QueryResult(
             objname=query_result["objname"],
-            internal_names={query_result["internal_name"]},
+            internal_names={
+                query_result["internal_name"],
+            },
             coordinates=query_result["coords"],
             light_curves=query_result["light_curves"],
         )
@@ -138,7 +140,10 @@ class ANTARESQueryAgent(QueryAgent):
         """
         Query transient objects by coordinates.
         """
-        super().query_by_coords(coords, **kwargs)
+        try:
+            super().query_by_coords(coords, **kwargs)  # initial checks
+        except ValueError:
+            return [], False
         coords_arr = np.atleast_1d(coords)
         results = []
         for coord in coords_arr:

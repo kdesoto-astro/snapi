@@ -39,7 +39,9 @@ class QueryAgent(abc.ABC):
         """
         Query transient objects by coordinates.
         """
-        if not isinstance(coords, SkyCoord) and not isinstance(list(coords)[0], SkyCoord):
+        if not isinstance(coords, SkyCoord) and not (
+            isinstance(coords, list) and isinstance(list(coords)[0], SkyCoord)
+        ):
             raise ValueError("coords must be a SkyCoord or an iterable of SkyCoords")
 
         return [], False
@@ -55,7 +57,6 @@ class QueryAgent(abc.ABC):
             transient.id,
         ]
         r, success = self.query_by_name(name_list, **kwargs)
-        print(success, r[0].light_curves)
         if success:
             return r, True
 

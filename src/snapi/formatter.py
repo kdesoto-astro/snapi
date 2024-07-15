@@ -6,6 +6,8 @@ import matplotlib.markers as mmarkers
 import matplotlib.path as mpath
 import matplotlib.transforms as mtransforms
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.ticker import AutoMinorLocator
 from numpy.typing import NDArray
 
 
@@ -33,6 +35,7 @@ class Formatter:
         self._marker_styles = ["o", "^", "*"]  # rotation
         self._face_colors: Union[list[str], NDArray[np.str_]] = cc.glasbey_dark
         self._edge_colors: NDArray[np.str_] = darken_colormap(self._face_colors)
+        self._fontname = "Verdana"  # default font
 
         self._face_color_index = 0
         self._edge_color_index = 0
@@ -110,3 +113,81 @@ class Formatter:
     def marker_size(self) -> float:
         """Returns the current marker size."""
         return self._marker_size
+
+    def make_plot_pretty(self, ax: Axes) -> None:
+        """Makes the plot pretty.
+        Code taken from Karthik's plotting utils.
+        """
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+        fig = ax.get_figure()
+        ax.tick_params(
+            which="major",
+            bottom="on",
+            top="on",
+            left="on",
+            right="on",
+            direction="in",
+        )
+        ax.tick_params(
+            which="minor",
+            bottom="on",
+            top="on",
+            left="on",
+            right="on",
+            direction="in",
+        )
+        if fig is None:
+            ax.tick_params(
+                which="major",
+                length=20,
+            )
+            ax.tick_params(
+                which="minor",
+                length=7.5,
+            )
+            ax.set_xlabel(ax.get_xlabel(), fontsize=16)
+            ax.set_ylabel(ax.get_ylabel(), fontsize=16)
+        else:
+            ax.tick_params(which="major", length=2.0 * fig.get_figwidth(), labelsize=2.0 * fig.get_figwidth())
+            ax.tick_params(
+                which="minor",
+                length=0.75 * fig.get_figwidth(),
+            )
+            ax.set_xlabel(ax.get_xlabel(), fontsize=2.5 * fig.get_figwidth())
+            ax.set_ylabel(ax.get_ylabel(), fontsize=2.5 * fig.get_figwidth())
+
+            # check if plot has legend
+            if ax.get_legend() is not None:
+                # check if plot has legend
+                legend = ax.get_legend()
+                for text in legend.get_texts():
+                    text.set_fontsize(2.0 * fig.get_figwidth())
+            if ax.get_title() is not None:
+                ax.set_title(ax.get_title(), fontsize=3.0 * fig.get_figwidth())
+
+        # edit all fonts to Verdana
+        for item in [ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels():
+            item.set_fontname(self._fontname)
+
+    def add_legend(self, ax: Axes, ncols: int = 4, pretty: bool = True) -> None:
+        """Add a legend to the plot.
+        If pretty is True, the legend will be formatted according
+        to the make_plot_pretty method.
+        """
+        handles, _ = ax.get_legend_handles_labels()
+        num_handles = len(handles)
+        num_rows = (num_handles + ncols - 1) // ncols
+        ax.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.25 - 0.05 * num_rows),
+            ncol=ncols,
+        )
+        if not pretty:
+            return None
+        for item in ax.get_legend().get_texts():
+            item.set_fontname(self._fontname)
+            fig = ax.get_figure()
+            if fig is not None:
+                item.set_fontsize(2.0 * fig.get_figwidth())
+        return None

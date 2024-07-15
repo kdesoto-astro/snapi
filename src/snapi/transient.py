@@ -105,8 +105,12 @@ class Transient(Base):
     def ingest_query_info(self, result: dict[str, Any]) -> None:
         """Ingests information from a QueryResult adds to object."""
         if result["internal_names"] is not None:
+            if "" in result["internal_names"]:
+                result["internal_names"].remove("")
             self.internal_names.update(result["internal_names"])
-        self.internal_names.add(result["objname"])
+
+        if result["objname"] != "":
+            self.internal_names.add(result["objname"])
 
         # prioritize object IAU name as main ID
         self._choose_main_name()
@@ -125,15 +129,20 @@ class Transient(Base):
 
     def save(self, filename: str) -> None:
         """Save transient object to HDF5 file."""
-        self.photometry.save(filename, path="photometry")
-        # TODO: add spectroscopy save
-
         with h5py.File(filename, "w") as f:
+            pass
+
+        self.photometry.save(filename, path="photometry")
+
+        with h5py.File(filename, "a") as f:
             f.attrs["id"] = self.id
-            f.attrs["ra"] = self.coordinates.ra.deg
-            f.attrs["dec"] = self.coordinates.dec.deg
-            f.attrs["redshift"] = self.redshift
-            f.attrs["spec_class"] = self.spec_class
+            if self.coordinates is not None:
+                f.attrs["ra"] = self.coordinates.ra.deg
+                f.attrs["dec"] = self.coordinates.dec.deg
+            if self.redshift is not None:
+                f.attrs["redshift"] = self.redshift
+            if self.spec_class is not None:
+                f.attrs["spec_class"] = self.spec_class
             f.attrs["internal_names"] = list(self.internal_names)
 
     @classmethod
@@ -150,7 +159,7 @@ class Transient(Base):
                 dec = dec * u.deg  # pylint: disable=no-member
             redshift = f.attrs.get("redshift")
             spec_class = f.attrs.get("spec_class")
-            internal_names = f.attrs.get("internal_names", default=set())
+            internal_names = set(f.attrs.get("internal_names", default=set()))
 
         return cls(
             ra=ra,
