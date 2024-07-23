@@ -47,7 +47,9 @@ class QueryAgent(abc.ABC):
         return [], False
 
     def query_transient(
-        self, transient: Transient, **kwargs: Mapping[str, Any]
+        self,
+        transient: Transient,
+        **kwargs: Any,
     ) -> tuple[List[QueryResult], bool]:
         """
         Query by Transient object.

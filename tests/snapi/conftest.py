@@ -62,7 +62,9 @@ class Helpers:  # pylint: disable=too-few-public-methods
     """Helper functions for test cases."""
 
     @staticmethod
-    def assert_query_result(query_result: Any, iid: str, ra: float, dec: float, z: float) -> None:
+    def assert_query_result(
+        query_result: Any, iid: str, ra: float, dec: float, z: float, phot_spec: bool = True
+    ) -> None:
         """Assert query result."""
         assert query_result.objname == iid
         assert query_result.coordinates is not None
@@ -70,15 +72,17 @@ class Helpers:  # pylint: disable=too-few-public-methods
         assert query_result.coordinates.dec.deg == pytest.approx(dec, rel=1e-3)
         assert query_result.redshift == pytest.approx(z, rel=1e-3)
         assert query_result.internal_names is not None
-        assert query_result.light_curves is not None
 
-        assert len(query_result.internal_names) > 0
-        assert len(query_result.light_curves) > 0
-        for lc in query_result.light_curves:
-            assert lc.filter is not None
-            assert lc.filter.band is not None
-            assert len(lc.times) > 0
-            assert len(lc.mags) > 0
+        if phot_spec:
+            assert query_result.light_curves is not None
+            assert len(query_result.internal_names) > 0
+            assert len(query_result.light_curves) > 0
+
+            for lc in query_result.light_curves:
+                assert lc.filter is not None
+                assert lc.filter.band is not None
+                assert len(lc.times) > 0
+                assert len(lc.mags) > 0
 
 
 @pytest.fixture
