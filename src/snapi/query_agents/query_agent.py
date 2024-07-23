@@ -57,7 +57,7 @@ class QueryAgent(abc.ABC):
             transient.id,
         ]
         r, success = self.query_by_name(name_list, **kwargs)
-        print(success, r[0].light_curves)
+
         if success:
             return r, True
 
