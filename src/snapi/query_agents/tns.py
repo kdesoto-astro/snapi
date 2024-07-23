@@ -52,6 +52,16 @@ class TNSQueryAgent(QueryAgent):
         )
         try:
             self._local_df = pd.read_csv(self._data_path)
+
+            # in future, ensure only necessary columns are saved
+            keep_cols = [
+                "name",
+                "internal_names",
+                "ra",
+                "declination",
+                "redshift",
+            ]
+            self._local_df = self._local_df[keep_cols]
             self._df_coords = SkyCoord(
                 ra=self._local_df["ra"].values * u.deg,  # pylint: disable=no-member
                 dec=self._local_df["declination"].values * u.deg,  # pylint: disable=no-member
