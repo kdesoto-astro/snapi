@@ -37,7 +37,7 @@ class GHOSTQueryAgent(QueryAgent):
         )
         os.makedirs(self._ghost_path, exist_ok=True)
         os.makedirs(self._tmp_path, exist_ok=True)
-        getGHOST(real=True, verbose=False, installpath=self._ghost_path, clobber=False)
+        getGHOST(real=True, verbose=False, installpath=self._ghost_path, clobber=True)
         self._col_names = [
             "objName",
             "objAltName1",
@@ -47,7 +47,26 @@ class GHOSTQueryAgent(QueryAgent):
             "NED_redshift",
             "raMean",
             "decMean",
-        ]  # TODO: fill in
+        ]
+
+        self._keep_cols = [
+            "objName",
+            "objAltName1",
+            "objAltName2",
+            "objAltName3",
+            "NED_name",
+            "NED_redshift",
+            "raMean",
+            "decMean",
+            "TransientName",
+            "TransientRA",
+            "TransientDEC",
+        ]
+
+        # only keep needed columns of GHOST database
+        df = pd.read_csv(os.path.join(self._ghost_path, "database/GHOST.csv"), sep=",")
+        df = df[self._keep_cols]
+        df.to_csv(os.path.join(self._ghost_path, "database/GHOST.csv"), index=False)
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
         if query_result["NED_name"] not in {"", "nan"}:
