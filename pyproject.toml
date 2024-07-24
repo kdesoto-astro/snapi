@@ -19,6 +19,7 @@ dependencies = [
     'alerce',
     'antares-client',
     'astropy',
+    'astro_ghost',
     'colorcet',
     'george',
     'h5py',
