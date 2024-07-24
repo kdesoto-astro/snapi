@@ -59,3 +59,22 @@ class MeasurementSet(Base):
         from instrument named 'instrument.'
         """
         pass
+
+
+class Observer(Base):
+    """Class that holds observing facility information."""
+
+    def __init__(
+        self,
+        instrument: str,
+    ) -> None:
+        self._instrument = instrument
+
+    def __eq__(self, value: object) -> bool:
+        """Check if two filters are equal."""
+        return str(self) == str(value)
+
+    @property
+    def instrument(self) -> str:
+        """Return instrument of filter."""
+        return self._instrument

@@ -12,7 +12,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
 
-from .base_classes import Base, Plottable
+from .base_classes import Observer, Plottable
 from .formatter import Formatter
 from .image import Image
 from .utils import list_datasets
@@ -21,7 +21,7 @@ T = TypeVar("T", int, float, np.float32)
 LightT = TypeVar("LightT", bound="LightCurve")
 
 
-class Filter(Base):
+class Filter(Observer):
     """Contains instrument and filter information."""
 
     def __init__(
@@ -31,7 +31,7 @@ class Filter(Base):
         center: u.Quantity,
         width: Optional[u.Quantity] = None,
     ) -> None:
-        self._instrument = instrument
+        super().__init__(instrument)
         self._band = band
 
         if center.unit.physical_type == "frequency":  # convert to wavelength
@@ -57,15 +57,6 @@ class Filter(Base):
         Format: instrument_band.
         """
         return f"{self._instrument}_{self._band}"
-
-    def __eq__(self, value: object) -> bool:
-        """Check if two filters are equal."""
-        return str(self) == str(value)
-
-    @property
-    def instrument(self) -> str:
-        """Return instrument of filter."""
-        return self._instrument
 
     @property
     def band(self) -> str:
@@ -429,7 +420,6 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             yerr=val_errs[~self.upper_limit_mask],
             c=formatter.edge_color,
             fmt="none",
-            zorder=500,
         )
         ax.scatter(
             self.times[~self.upper_limit_mask],
@@ -439,7 +429,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             marker=formatter.marker_style,
             s=formatter.marker_size,
             label=str(self._filter),
-            zorder=1000,
+            zorder=10,  # Ensure scatter plot is on top of errorbars
         )
         # plot non-detections
         ax.scatter(
@@ -450,7 +440,6 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             marker=formatter.nondetect_marker_style,
             alpha=formatter.nondetect_alpha,
             s=formatter.nondetect_size,
-            zorder=1000,
         )
 
         return ax
