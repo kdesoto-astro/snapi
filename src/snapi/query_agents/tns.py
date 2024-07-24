@@ -3,7 +3,7 @@ import json
 import os
 import time
 from collections import OrderedDict
-from typing import Any, List, Mapping, Optional
+from typing import Any, List, Optional
 
 import astropy.units as u
 import numpy as np
@@ -52,6 +52,19 @@ class TNSQueryAgent(QueryAgent):
         )
         try:
             self._local_df = pd.read_csv(self._data_path)
+
+            # in future, ensure only necessary columns are saved
+            keep_cols = [
+                "name_prefix",
+                "name",
+                "internal_names",
+                "ra",
+                "declination",
+                "redshift",
+                "type",
+            ]
+            self._local_df = self._local_df[keep_cols]
+            self._local_df.to_csv(self._data_path, index=False)
             self._df_coords = SkyCoord(
                 ra=self._local_df["ra"].values * u.deg,  # pylint: disable=no-member
                 dec=self._local_df["declination"].values * u.deg,  # pylint: disable=no-member
@@ -140,7 +153,7 @@ class TNSQueryAgent(QueryAgent):
         dec: Optional[Any] = "",
         radius: Optional[float] = 3.0,
         internal_name: Optional[str] = "",
-    ) -> Any:
+    ) -> List[dict[str, Any]]:
         """Retrieve search results from TNS."""
         search_query = [
             ("ra", ra),
@@ -159,14 +172,15 @@ class TNSQueryAgent(QueryAgent):
         r = requests.post(self._url_search, headers=self._tns_header, data=search_data, timeout=self._timeout)
         if r.status_code != 200:
             print(f"ERROR {r.status_code}")
-            return {}
+            return []
         # sleep necessary time to abide by rate limit
         reset = get_reset_time(r)
         if reset is not None:
             time.sleep(reset + 1)
-        return r.json()["data"]["reply"]
+        out: List[dict[str, Any]] = r.json()["data"]["reply"]
+        return out
 
-    def _tns_object_helper(self, obj_name: str) -> Any:
+    def _tns_object_helper(self, obj_name: str) -> dict[str, Any]:
         """Retrieve specific object from TNS."""
         get_query = [("objname", obj_name), ("objid", ""), ("photometry", "1"), ("spectra", "1")]
         json_file = OrderedDict(get_query)
@@ -179,9 +193,10 @@ class TNSQueryAgent(QueryAgent):
         reset = get_reset_time(r)
         if reset is not None:
             time.sleep(reset + 1)
-        return r.json()["data"]["reply"]
+        out: dict[str, Any] = r.json()["data"]["reply"]
+        return out
 
-    def query_by_name(self, names: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
+    def query_by_name(self, names: Any, **kwargs: Any) -> tuple[List[QueryResult], bool]:
         """
         Query transient objects by name.
         """
@@ -194,17 +209,17 @@ class TNSQueryAgent(QueryAgent):
                 return results, False
             matches = self._local_df.isin(names_arr)["name"].to_numpy()
             r_all = self._local_df[matches]
-            for i in range(len(r_all)):
-                objname = r_all["name"][i]
-                coord = self._df_coords[matches][i]
-                internal_names = [q.strip() for q in str(r_all["internal_names"][i]).split(",")]
+            for i, r_local in r_all.iterrows():
+                objname = r_local["name"]
+                coord = self._df_coords[i]
+                internal_names = [q.strip() for q in str(r_local["internal_names"]).split(",")]
 
                 results.append(
                     QueryResult(
                         objname=objname,
                         internal_names=set(internal_names),
                         coordinates=coord,
-                        redshift=r_all["redshift"][i],
+                        redshift=r_local["redshift"],
                     )
                 )
             if len(results) > 0:
@@ -219,18 +234,16 @@ class TNSQueryAgent(QueryAgent):
                 success = True
                 continue
             # if no results, try searching by internal name
-            r = self._tns_search_helper(internal_name=name)
-            if len(r) == 1:
-                result = r[0]
+            r_search = self._tns_search_helper(internal_name=name)
+            if len(r_search) == 1:
+                result = r_search[0]
                 obj_query = self._tns_object_helper(result["objname"])
                 results.append(self._format_query_result(obj_query))
                 success = True
-            else:
-                results.append(QueryResult())
 
         return results, success
 
-    def query_by_coords(self, coords: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
+    def query_by_coords(self, coords: Any, **kwargs: Any) -> tuple[List[QueryResult], bool]:
         """
         Query transient objects by coordinates.
 
@@ -282,8 +295,6 @@ class TNSQueryAgent(QueryAgent):
                             spec_class=spec_class,
                         )
                     )
-                else:
-                    results.append(QueryResult())
 
             return results, True
 
@@ -303,7 +314,5 @@ class TNSQueryAgent(QueryAgent):
                 result = r[0]
                 obj_query = self._tns_object_helper(result["objname"])
                 results.append(self._format_query_result(obj_query))
-            else:
-                results.append(QueryResult())
 
         return results, True

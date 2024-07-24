@@ -21,23 +21,5 @@
 # png image files
 # *.png	filter=lfs diff=lfs merge=lfs -text
 .git_archival.txt export-subst
-data/tns_public_objects_05_22_24.csv filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/DC21fyx.csv filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/candidates.dat filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2021aiay.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2020ltr.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ixf_transient.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/DC21crhk.csv filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2019tzk.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2021qvu.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2021aiay.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2021qvu.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2022km.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transientdecam_2019tzk.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2022km.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2021nfp.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2020ltr.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2021aewz.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient2_2021nfp.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2019tzk.hdf5 filter=lfs diff=lfs merge=lfs -text
-docs/notebooks/data/ddf_transient_2021aewz.hdf5 filter=lfs diff=lfs merge=lfs -text
+#docs/notebooks/data/** filter=lfs diff=lfs merge=lfs -text
+#data/** filter=lfs diff=lfs merge=lfs -text

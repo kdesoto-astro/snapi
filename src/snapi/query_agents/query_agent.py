@@ -47,7 +47,9 @@ class QueryAgent(abc.ABC):
         return [], False
 
     def query_transient(
-        self, transient: Transient, **kwargs: Mapping[str, Any]
+        self,
+        transient: Transient,
+        **kwargs: Any,
     ) -> tuple[List[QueryResult], bool]:
         """
         Query by Transient object.
@@ -57,7 +59,7 @@ class QueryAgent(abc.ABC):
             transient.id,
         ]
         r, success = self.query_by_name(name_list, **kwargs)
-        print(success, r[0].light_curves)
+
         if success:
             return r, True
 

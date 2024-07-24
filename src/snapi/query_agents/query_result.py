@@ -41,3 +41,20 @@ class QueryResult:
             "light_curves": self.light_curves,
             "spectra": self.spectra,
         }
+
+
+@dataclass
+class HostQueryResult(QueryResult):
+    """Class for storing host galaxy
+    query results.
+    """
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert object to dictionary."""
+        return {
+            "hostname": self.objname,
+            "host_internal_names": self.internal_names,
+            "host_coords": self.coordinates,
+            "host_redshift": self.redshift,
+            "host_spectra": self.spectra,
+        }
