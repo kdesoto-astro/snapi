@@ -1,12 +1,14 @@
 """Class for a single spectrum."""
 import copy
-from typing import Optional, Sequence, Union
+from typing import Iterable, Optional, Sequence, Union
 
 import numpy as np
+from astropy.units import Quantity
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 from .base_classes import Observer, Plottable
+from .constants import ION_LINES
 from .formatter import Formatter
 
 SequenceNumpy = Union[NDArray[np.float32], Sequence[float]]
@@ -22,18 +24,20 @@ class Spectrometer(Observer):
         instrument: str,
         wavelength_start: float,
         wavelength_delta: float,
+        num_channels: int,
     ) -> None:
         """Initialize a Spectrometer object."""
         super().__init__(instrument)
         self._wv_start = wavelength_start
         self._wv_delta = wavelength_delta
+        self._wv_num = num_channels
 
     @property
     def wavelengths(self) -> NDArray[np.float32]:
         """Return wavelengths."""
         return np.arange(
             self._wv_start,
-            self._wv_start + self._wv_delta,
+            self._wv_start + self._wv_num * self._wv_delta,
             self._wv_delta,
         ).astype(np.float32)
 
@@ -45,7 +49,7 @@ class Spectrum(Plottable):
 
     def __init__(
         self,
-        time: Optional[float] = None,
+        time: Optional[Quantity] = None,
         fluxes: Optional[SequenceNumpy] = None,
         errors: Optional[SequenceNumpy] = None,
         spectrometer: Optional[Spectrometer] = None,
@@ -61,6 +65,7 @@ class Spectrum(Plottable):
             errors = np.array([])
 
         if spectrometer is not None:
+            print(len(spectrometer.wavelengths), len(fluxes), len(errors))
             max_len = max(len(spectrometer.wavelengths), len(fluxes), len(errors))
             if len(spectrometer.wavelengths) < max_len:
                 raise ValueError("Too many flux values were provided for given spectrometer.")
@@ -75,7 +80,7 @@ class Spectrum(Plottable):
     @property
     def time(self) -> Optional[float]:
         """Return time of observation."""
-        return self._time
+        return self._time.mjd if self._time is not None else None
 
     @property
     def fluxes(self) -> NDArray[np.float32]:
@@ -100,19 +105,20 @@ class Spectrum(Plottable):
     @property
     def normalized_fluxes(self) -> NDArray[np.float32]:
         """Return normalized fluxes."""
-        return self._fluxes / np.percentile(self._fluxes, 25)
+        return (self._fluxes - np.min(self._fluxes)) / np.ptp(self._fluxes)
 
     @property
     def normalized_errors(self) -> NDArray[np.float32]:
         """Return normalized errors."""
-        return self._errors / np.percentile(self._fluxes, 25)
+        return self._errors / np.ptp(self._fluxes)
 
     def plot(
         self,
         ax: Axes,
         formatter: Optional[Formatter] = None,
         normalize: bool = True,
-        overlay_lines: bool = False,
+        overlay_lines: Optional[Iterable[str]] = None,
+        annotate: bool = False,
         offset: float = 0.0,
     ) -> Axes:
         """Plot a single spectrum."""
@@ -122,22 +128,86 @@ class Spectrum(Plottable):
 
         if normalize:
             ax.set_ylabel("Normalized Flux")
-            ax.plot(self._wavelengths, self.normalized_fluxes + offset)
+            if self._time is not None:
+                ax.plot(
+                    self._wavelengths,
+                    self.normalized_fluxes + offset,
+                    color=formatter.edge_color,
+                    linewidth=formatter.line_width,
+                    label=rf"$t={round(self._time.mjd,2)}$",
+                )
+            else:
+                ax.plot(
+                    self._wavelengths,
+                    self.normalized_fluxes + offset,
+                    color=formatter.edge_color,
+                    linewidth=formatter.line_width,
+                )
+            if self._time is not None and annotate:
+                ax.annotate(
+                    rf"$t={round(self._time.mjd, 2)}$",
+                    xy=(ax.get_xlim()[1], self.normalized_fluxes[-1] + offset),
+                    xytext=(10, 0),
+                    textcoords="offset points",
+                    ha="left",
+                    va="center",
+                    color=formatter.edge_color,
+                )
             ax.fill_between(
                 self._wavelengths,
                 self.normalized_fluxes - self.normalized_errors + offset,
                 self.normalized_fluxes + self.normalized_errors + offset,
                 alpha=0.5,
+                color=formatter.face_color,
             )
         else:
             ax.set_ylabel("Flux")
-            ax.plot(self._wavelengths, self._fluxes + offset)
+            if self._time is not None:
+                ax.plot(
+                    self._wavelengths,
+                    self._fluxes + offset,
+                    label=rf"$t={round(self._time.mjd,2)}$",
+                    color=formatter.edge_color,
+                    linewidth=formatter.line_width,
+                )
+            else:
+                ax.plot(
+                    self._wavelengths,
+                    self._fluxes + offset,
+                    color=formatter.edge_color,
+                    linewidth=formatter.line_width,
+                )
+            if self._time is not None and annotate:
+                ax.annotate(
+                    rf"$t={round(self._time.mjd,2)}$",
+                    xy=(ax.get_xlim()[1], self._fluxes[-1] + offset),
+                    xytext=(10, 0),
+                    textcoords="offset points",
+                    ha="left",
+                    va="center",
+                    color=formatter.edge_color,
+                )
             ax.fill_between(
                 self._wavelengths,
                 self._fluxes - self._errors + offset,
                 self._fluxes + self._errors + offset,
                 alpha=0.5,
+                c=formatter.face_color,
             )
-        if overlay_lines:
-            pass
+        if not overlay_lines:
+            return ax
+
+        for line in overlay_lines:
+            if line in ION_LINES:
+                for ion_line in ION_LINES[line]:
+                    if (ion_line > ax.get_xlim()[1]) or (ion_line < ax.get_xlim()[0]):
+                        continue
+                    ax.axvline(
+                        ion_line,
+                        color="gray",
+                        linestyle="--",
+                        linewidth=0.5 * formatter.line_width,
+                    )
+            else:
+                raise ValueError(f"Unrecognized line type {line}.")
         return ax

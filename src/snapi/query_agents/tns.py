@@ -11,8 +11,10 @@ import pandas as pd
 import requests
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
+from numpy.typing import NDArray
 
 from ..lightcurve import Filter, LightCurve
+from ..spectrum import Spectrometer, Spectrum
 from .query_agent import QueryAgent
 from .query_result import QueryResult
 
@@ -73,6 +75,58 @@ class TNSQueryAgent(QueryAgent):
             self._local_df = None  # type: ignore
             self._df_coords = None
 
+    def _format_light_curves(self, lc_dict: dict[str, dict[str, Any]]) -> set[LightCurve]:
+        """
+        Format light curves into LightCurve objects.
+        """
+        light_curves = set()
+        for phot_dict in lc_dict.values():
+            phot_mags = np.array(phot_dict["mags"], dtype=object)
+            phot_mags[phot_mags == ""] = np.nan
+            phot_dict["mags"] = phot_mags.astype(np.float32)
+
+            phot_mag_errs = np.array(phot_dict["mag_errs"], dtype=object)
+            phot_mag_errs[phot_mag_errs == ""] = np.nan
+            phot_dict["mag_errs"] = phot_mag_errs.astype(np.float32)
+
+            light_curve = LightCurve(
+                times=phot_dict["times"],
+                mags=phot_dict["mags"],
+                mag_errs=phot_dict["mag_errs"],
+                upper_limits=np.zeros_like(phot_dict["mags"], dtype=bool),
+                # zpts=phot_dict["zpts"],
+                filt=phot_dict["filt"],
+            )
+            light_curves.add(light_curve)
+        return light_curves
+
+    def _format_spectra(self, query_spectra: List[dict[str, Any]]) -> set[Spectrum]:
+        """
+        Format spectra into Spectrum objects.
+        """
+        # extract spectra
+        spectra = set()
+        for spec in query_spectra:
+            file_tns_url = spec["asciifile"]
+            wv, flux = self._tns_spec_helper(file_tns_url)
+            if len(wv) == 0:
+                continue
+            spectrometer = Spectrometer(
+                instrument=spec["instrument"],
+                wavelength_start=wv[0],
+                wavelength_delta=wv[1] - wv[0],
+                num_channels=len(wv),
+            )
+            spectra.add(
+                Spectrum(
+                    time=Time(spec["jd"], format="jd"),  # pylint: disable=no-member
+                    fluxes=flux,
+                    errors=np.nan * np.ones(len(flux)),
+                    spectrometer=spectrometer,
+                )
+            )
+        return spectra
+
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
         """
         Format query result into QueryResult object.
@@ -83,7 +137,6 @@ class TNSQueryAgent(QueryAgent):
         coords = SkyCoord(ra=ra, dec=dec, frame="icrs")
         redshift = query_result["redshift"]
         internal_names = [q.strip() for q in str(query_result["internal_names"]).split(",")]
-        light_curves = set()
         photometry_arr = query_result["photometry"]
         lc_dict: dict[str, dict[str, Any]] = {}
         for phot_dict in photometry_arr:
@@ -111,31 +164,17 @@ class TNSQueryAgent(QueryAgent):
                     # "zpts": [phot_dict["zpt"]],
                     "filt": filt,
                 }
-        for phot_dict in lc_dict.values():
-            phot_mags = np.array(phot_dict["mags"], dtype=object)
-            phot_mags[phot_mags == ""] = np.nan
-            phot_dict["mags"] = phot_mags.astype(np.float32)
+        light_curves = self._format_light_curves(lc_dict)
+        spectra = self._format_spectra(query_result["spectra"])
 
-            phot_mag_errs = np.array(phot_dict["mag_errs"], dtype=object)
-            phot_mag_errs[phot_mag_errs == ""] = np.nan
-            phot_dict["mag_errs"] = phot_mag_errs.astype(np.float32)
-
-            light_curve = LightCurve(
-                times=phot_dict["times"],
-                mags=phot_dict["mags"],
-                mag_errs=phot_dict["mag_errs"],
-                upper_limits=np.zeros_like(phot_dict["mags"], dtype=bool),
-                # zpts=phot_dict["zpts"],
-                filt=phot_dict["filt"],
-            )
-            light_curves.add(light_curve)
         query_result_object = QueryResult(
             objname=objname,
             internal_names=set(internal_names),
             coordinates=coords,
             redshift=redshift,
             light_curves=light_curves,
-        )  # TODO: incorporate spectra
+            spectra=spectra,
+        )
 
         return query_result_object
 
@@ -195,6 +234,31 @@ class TNSQueryAgent(QueryAgent):
             time.sleep(reset + 1)
         out: dict[str, Any] = r.json()["data"]["reply"]
         return out
+
+    def _tns_spec_helper(self, file_tns_url: str) -> NDArray[np.float32]:
+        """Helper function to retrieve spectra from TNS.
+
+        Parameters
+        ----------
+        file_tns_url : str
+            URL to TNS file containing spectra.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing spectra information.
+        """
+        api_data = {"api_key": self._tns_api_key}
+        response = requests.post(
+            file_tns_url, headers=self._tns_header, data=api_data, stream=True, timeout=self._timeout
+        )
+        if response.status_code != 200:
+            print(f"ERROR {response.status_code}")
+            return np.array([[], []])
+        text = response.text
+        arr = [x.split() for x in text.split("\n") if (len(x) > 0 and x[0] != "#")]
+        arr = [[x[0], x[1].strip("\r")] for x in arr if len(x) > 1]
+        return np.array(arr).T.astype(np.float32)
 
     def query_by_name(self, names: Any, **kwargs: Any) -> tuple[List[QueryResult], bool]:
         """
