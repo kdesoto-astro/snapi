@@ -1,5 +1,7 @@
+"""Stores all formatting information in an object for consistent
+formatting across plots."""
 import re
-from typing import Union
+from typing import Optional, Union
 
 import colorcet as cc  # pylint: disable=import-error
 import matplotlib.markers as mmarkers
@@ -7,6 +9,7 @@ import matplotlib.path as mpath
 import matplotlib.transforms as mtransforms
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.text import Annotation
 from matplotlib.ticker import AutoMinorLocator
 from numpy.typing import NDArray
 
@@ -31,21 +34,38 @@ class Formatter:
     figure dimensions.
     """
 
-    def __init__(self) -> None:
-        self._marker_styles = ["o", "^", "*"]  # rotation
-        self._face_colors: Union[list[str], NDArray[np.str_]] = cc.glasbey_dark
-        self._edge_colors: NDArray[np.str_] = darken_colormap(self._face_colors)
-        self._fontname = "Verdana"  # default font
+    def __init__(
+        self,
+        linewidth: float = 2.0,
+        markersize: float = 36.0,
+        fontname: str = "Verdana",
+        face_colors: Union[list[str], NDArray[np.str_]] = cc.glasbey_dark,
+        edge_colors: Optional[NDArray[np.str_]] = None,
+        marker_styles: Optional[list[str]] = None,
+        nondetect_alpha: float = 0.3,
+        nondetect_marker_style: str = "",
+        nondetect_size: float = 0.0,
+    ) -> None:
+        if edge_colors is None:
+            edge_colors = darken_colormap(face_colors)
+        if marker_styles is None:
+            marker_styles = ["o", "s", "D", "v", "^", "<", ">", "p", "P", "*", "h", "H", "X", "d"]
+
+        self._marker_styles = marker_styles
+        self._face_colors = face_colors
+        self._edge_colors = edge_colors
+        self._fontname = fontname
 
         self._face_color_index = 0
         self._edge_color_index = 0
 
         self._marker_index = 0
-        self._marker_size = 36.0  # default marker size
+        self._marker_size = markersize
+        self._line_width = linewidth
 
-        self.nondetect_alpha = 0.3
-        self.nondetect_marker_style = ""
-        self.nondetect_size = 0.0
+        self.nondetect_alpha = nondetect_alpha
+        self.nondetect_marker_style = nondetect_marker_style
+        self.nondetect_size = nondetect_size
 
         # Define the downward arrow marker path
         arrow_edge = 0.3
@@ -93,6 +113,16 @@ class Formatter:
         self._marker_index = (self._marker_index + 1) % len(self._marker_styles)
         self._update_nondetection_properties()
 
+    def reset_colors(self) -> None:
+        """Reset color rotation."""
+        self._face_color_index = 0
+        self._edge_color_index = 0
+
+    def reset_markers(self) -> None:
+        """Reset marker rotation."""
+        self._marker_index = 0
+        self._update_nondetection_properties()
+
     @property
     def face_color(self) -> str:
         """Returns the current color for point faces."""
@@ -114,10 +144,16 @@ class Formatter:
         """Returns the current marker size."""
         return self._marker_size
 
+    @property
+    def line_width(self) -> float:
+        """Returns the current line width."""
+        return self._line_width
+
     def make_plot_pretty(self, ax: Axes) -> None:
         """Makes the plot pretty.
         Code taken from Karthik's plotting utils.
         """
+        annotations = [child for child in ax.get_children() if isinstance(child, Annotation)]
         ax.xaxis.set_minor_locator(AutoMinorLocator())
         ax.yaxis.set_minor_locator(AutoMinorLocator())
         fig = ax.get_figure()
@@ -166,9 +202,15 @@ class Formatter:
             if ax.get_title() is not None:
                 ax.set_title(ax.get_title(), fontsize=3.0 * fig.get_figwidth())
 
+            for annotation in annotations:
+                annotation.set_fontsize(2.0 * fig.get_figwidth())
+
         # edit all fonts to Verdana
         for item in [ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels():
             item.set_fontname(self._fontname)
+
+        for annotation in annotations:
+            annotation.set_fontname(self._fontname)
 
     def add_legend(self, ax: Axes, ncols: int = 4, pretty: bool = True) -> None:
         """Add a legend to the plot.
