@@ -167,6 +167,11 @@ class TNSQueryAgent(QueryAgent):
         light_curves = self._format_light_curves(lc_dict)
         spectra = self._format_spectra(query_result["spectra"])
 
+        if query_result["object_type"] not in ["nan", ""]:
+            spec_class = str(query_result["object_type"])
+        else:
+            spec_class = None
+
         query_result_object = QueryResult(
             objname=objname,
             internal_names=set(internal_names),
@@ -174,6 +179,7 @@ class TNSQueryAgent(QueryAgent):
             redshift=redshift,
             light_curves=light_curves,
             spectra=spectra,
+            spec_class=spec_class,
         )
 
         return query_result_object
@@ -277,13 +283,17 @@ class TNSQueryAgent(QueryAgent):
                 objname = r_local["name"]
                 coord = self._df_coords[i]
                 internal_names = [q.strip() for q in str(r_local["internal_names"]).split(",")]
-
+                if str(r_local["type"]) != "nan":
+                    spec_class = str(r_local["type"])
+                else:
+                    spec_class = None
                 results.append(
                     QueryResult(
                         objname=objname,
                         internal_names=set(internal_names),
                         coordinates=coord,
                         redshift=r_local["redshift"],
+                        spec_class=spec_class,
                     )
                 )
             if len(results) > 0:
@@ -346,10 +356,10 @@ class TNSQueryAgent(QueryAgent):
                     objname = r["name"].item()
                     final_coord = self._df_coords[matches]
                     internal_names = [q.strip() for q in str(r["internal_names"].item()).split(",")]
-                    if r["type"].item() == "nan":
-                        spec_class = r["type"].item()
+                    if r["type"].item() not in ["nan", ""]:
+                        spec_class = str(r["type"].item())
                     else:
-                        spec_class = r["name_prefix"].item()
+                        spec_class = None
                     results.append(
                         QueryResult(
                             objname=objname,
@@ -380,3 +390,14 @@ class TNSQueryAgent(QueryAgent):
                 results.append(self._format_query_result(obj_query))
 
         return results, True
+
+    def retrieve_all_names(self, known_class: bool = True) -> NDArray[np.str_]:
+        """From the local database, retrieve all object names.
+        If known_class is True, only retrieve objects with known
+        spectroscopic class. Requires local database to be loaded.
+        """
+        if self._local_df is None:
+            raise ValueError("Local database not loaded.")
+        if known_class:
+            return self._local_df[~self._local_df.isnull()["type"]]["name"].to_numpy()
+        return self._local_df["name"].to_numpy()

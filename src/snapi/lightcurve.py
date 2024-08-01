@@ -5,8 +5,8 @@ from typing import Any, Iterable, Mapping, Optional, Sequence, Type, TypeVar
 import astropy.units as u
 import numba
 import numpy as np
+import pandas as pd
 from astropy.table.table import QTable
-from astropy.time import Time
 from astropy.timeseries import LombScargle, TimeSeries
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -238,6 +238,9 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
     def _sort(self) -> None:
         """Sort light curve by time."""
         self._ts.sort()
+
+    def __len__(self) -> int:
+        return len(self._ts)
 
     @property
     def times(self) -> Any:
@@ -475,31 +478,33 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         if self._filter != other.filter:
             raise ValueError("Filters must be the same to merge light curves!")
 
-        non_repeat_idxs = ~np.isin(other.times, self.times)
+        ts_df = self._ts.to_pandas()
 
-        new_times = Time(
-            np.concatenate((self.times, other.times[non_repeat_idxs])),
-            format="mjd",
-            scale="utc",
-        )
-        new_fluxes = np.concatenate((self.fluxes, other.fluxes[non_repeat_idxs]))
-        new_flux_errs = np.concatenate((self.flux_errors, other.flux_errors[non_repeat_idxs]))
-        new_mags = np.concatenate((self.mags, other.mags[non_repeat_idxs]))
-        new_mag_errs = np.concatenate((self.mag_errors, other.mag_errors[non_repeat_idxs]))
-        new_zpts = np.concatenate((self.zeropoints, other.zeropoints[non_repeat_idxs]))
-        new_non_detections = np.concatenate((self.upper_limit_mask, other.upper_limit_mask[non_repeat_idxs]))
+        if len(other.detections) > 0:
+            other_det_df = other.detections.to_pandas()
 
-        self._ts = TimeSeries(
-            {
-                "time": new_times,
-                "flux": new_fluxes,
-                "flux_unc": new_flux_errs,
-                "mag": new_mags,
-                "mag_unc": new_mag_errs,
-                "zpt": new_zpts,
-                "non_detections": new_non_detections,
-            }
-        )
+            # among detections, fill in missing errors/zpts
+            ts_df[~ts_df["non_detections"]].combine_first(other_det_df)
+
+            # now for times that exist in both, we want to replace non-detections
+            # with detections, where possible
+            override_mask1 = other_det_df.index.isin(ts_df[ts_df["non_detections"]].index)
+            override_mask2 = ts_df["non_detections"] & ts_df.index.isin(other_det_df.index)
+            ts_df.loc[override_mask2, :] = other_det_df[override_mask1]
+
+            # finally, add new times
+            nonrepeat_idxs = other_det_df.index.difference(ts_df.index)
+            ts_df = pd.concat([ts_df, other_det_df.loc[nonrepeat_idxs]], ignore_index=False)
+
+        if len(other.non_detections) > 0:
+            other_nondet_df = other.non_detections.to_pandas()
+
+            # update non-detections similarly
+            ts_df[ts_df["non_detections"]].combine_first(other_nondet_df)
+            nonrepeat_idxs_2 = other_nondet_df.index.difference(ts_df.index)
+            ts_df = pd.concat([ts_df, other_nondet_df.loc[nonrepeat_idxs_2]], ignore_index=False)
+
+        self._ts = TimeSeries.from_pandas(ts_df)
         self._sort()
         self._complete()
 

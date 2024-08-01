@@ -27,6 +27,12 @@ class ALeRCEQueryAgent(QueryAgent):
             2: "r",
             3: "i",
         }
+        self._mag_keys = [
+            "mag",
+        ]
+        self._mag_err_keys = [
+            "e_mag",
+        ]
 
     def _photometry_helper(self, objname: str) -> tuple[set[LightCurve], bool]:
         """
@@ -37,12 +43,17 @@ class ALeRCEQueryAgent(QueryAgent):
             lc = self._client.query_lightcurve(objname, format="pandas")
             dets = list(lc["detections"])[0]
             detections = pd.DataFrame.from_dict(dets)
+
             try:  # not available with older versions of alerce-client
                 forced_phot = list(lc["forced_photometry"])[0]
                 forced_detections = pd.DataFrame.from_dict(forced_phot)
                 all_detections = pd.concat([detections, forced_detections], join="inner")
             except KeyError:
                 all_detections = detections
+
+            if "mjd" not in all_detections.columns:
+                return set(), False
+
             lcs: set[LightCurve] = set()
             if len(all_detections) == 0:
                 return lcs, False
@@ -53,12 +64,30 @@ class ALeRCEQueryAgent(QueryAgent):
                     center=np.nan * u.AA,  # pylint: disable=no-member
                 )  # pylint: disable=no-member
                 mask = all_detections["fid"] == b
+
+                mags = np.nan * np.ones(len(all_detections[mask]))
+                mag_errs = np.nan * np.ones(len(all_detections[mask]))
+                zpts = np.nan * np.ones(len(all_detections[mask]))
+
+                for mag_key in self._mag_keys:
+                    if mag_key in all_detections.columns:
+                        mags = all_detections[mask][mag_key]
+                        break
+                for mag_err_key in self._mag_err_keys:
+                    if mag_err_key in all_detections.columns:
+                        mag_errs = all_detections[mask][mag_err_key]
+                        break
+                for mag_err_key in self._mag_err_keys:
+                    if mag_err_key in all_detections.columns:
+                        mag_errs = all_detections[mask][mag_err_key]
+                        break
+
                 lc = LightCurve(
                     times=Time(all_detections[mask]["mjd"], format="mjd"),
-                    mags=all_detections[mask].get("mag", np.nan * np.ones(len(all_detections[mask]))),
-                    mag_errs=all_detections[mask].get("e_mag", np.nan * np.ones(len(all_detections[mask]))),
+                    mags=mags,
+                    mag_errs=mag_errs,
                     upper_limits=np.zeros(len(all_detections[mask]), dtype=bool),
-                    zpts=all_detections[mask].get("magzpsci", np.nan * np.ones(len(all_detections[mask]))),
+                    zpts=zpts,
                     filt=filt,
                 )
                 lcs.add(lc)
@@ -85,7 +114,6 @@ class ALeRCEQueryAgent(QueryAgent):
         """
         super().query_by_name(names, **kwargs)  # initial checks
         names_arr = np.atleast_1d(names)
-        print(names_arr)
         results = []
 
         for name in names_arr:
@@ -111,7 +139,6 @@ class ALeRCEQueryAgent(QueryAgent):
             except APIError:
                 results.append(QueryResult())
 
-        print(results)
         return results, True
 
     def query_by_coords(self, coords: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:

@@ -129,7 +129,7 @@ class Transient(Base):
 
     def save(self, filename: str) -> None:
         """Save transient object to HDF5 file."""
-        with h5py.File(filename, "w") as f:
+        with h5py.File(filename, "w") as f:  # overwrite
             pass
 
         self.photometry.save(filename, path="photometry")
@@ -160,7 +160,7 @@ class Transient(Base):
             redshift = f.attrs.get("redshift")
             spec_class = f.attrs.get("spec_class")
             internal_names = set(f.attrs.get("internal_names", default=set()))
-            
+
         return cls(
             ra=ra,
             dec=dec,
