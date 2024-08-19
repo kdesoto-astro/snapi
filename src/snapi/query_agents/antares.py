@@ -28,8 +28,8 @@ class ANTARESQueryAgent(QueryAgent):
             "ztf_fid",
             "ant_ra",
             "ant_dec",
-            "ztf_magzpsci",
             "ant_maglim",
+            "ztf_magzpsci",
         ]
         self._int_to_band = {
             1: "g",
@@ -71,7 +71,12 @@ class ANTARESQueryAgent(QueryAgent):
             return []
 
     def _locus_helper(self, locus: Locus) -> tuple[float, float, set[LightCurve]]:
-        time_series = locus.timeseries[self._ts_cols]
+        try: # TODO: better fix for this
+            time_series = locus.timeseries[self._ts_cols]
+        except KeyError: # sometimes zeropoint isn't there
+            time_series = locus.timeseries[self._ts_cols[:-1]]
+            time_series['ztf_magzpsci'] = np.nan
+            
         for col in self._ts_cols:
             if isinstance(time_series[col], MaskedColumn):
                 time_series[col] = time_series[col].filled(np.nan)
@@ -98,7 +103,6 @@ class ANTARESQueryAgent(QueryAgent):
                 band=self._int_to_band[b],
                 center=np.nan * u.AA,  # pylint: disable=no-member
             )
-            # first deal with detections
             lc = LightCurve(time_series[mask], filt=filt)
             lcs.add(lc)
 

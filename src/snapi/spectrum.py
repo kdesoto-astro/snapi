@@ -65,7 +65,6 @@ class Spectrum(Plottable):
             errors = np.array([])
 
         if spectrometer is not None:
-            print(len(spectrometer.wavelengths), len(fluxes), len(errors))
             max_len = max(len(spectrometer.wavelengths), len(fluxes), len(errors))
             if len(spectrometer.wavelengths) < max_len:
                 raise ValueError("Too many flux values were provided for given spectrometer.")

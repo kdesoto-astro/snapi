@@ -81,21 +81,17 @@ class TNSQueryAgent(QueryAgent):
         """
         light_curves = set()
         for phot_dict in lc_dict.values():
-            phot_mags = np.array(phot_dict["mags"], dtype=object)
-            phot_mags[phot_mags == ""] = np.nan
-            phot_dict["mags"] = phot_mags.astype(np.float32)
-
-            phot_mag_errs = np.array(phot_dict["mag_errs"], dtype=object)
-            phot_mag_errs[phot_mag_errs == ""] = np.nan
-            phot_dict["mag_errs"] = phot_mag_errs.astype(np.float32)
+            phot_df = pd.DataFrame({k: v for k, v in phot_dict.items() if k != "filt"})
+            phot_df.replace('', 'nan', inplace=True)
+            phot_df = phot_df.astype(np.float32)
 
             light_curve = LightCurve(
-                times=phot_dict["times"],
-                mags=phot_dict["mags"],
-                mag_errs=phot_dict["mag_errs"],
-                upper_limits=np.zeros_like(phot_dict["mags"], dtype=bool),
+                times=Time(phot_df["times"], format='jd', scale='utc'),  # pylint: disable=no-member
+                mags=phot_df["mags"],
+                mag_errs=phot_df["mag_errs"],
+                upper_limits=np.zeros_like(phot_df["mags"], dtype=bool),
                 # zpts=phot_dict["zpts"],
-                filt=phot_dict["filt"],
+                filt=phot_dict['filt'],
             )
             light_curves.add(light_curve)
         return light_curves
@@ -150,15 +146,13 @@ class TNSQueryAgent(QueryAgent):
                 # lim_mag=phot_dict["lim_mag"],
             )
             if str(filt) in lc_dict:
-                lc_dict[str(filt)]["times"].append(
-                    Time(phot_dict["jd"], format="jd")
-                )  # pylint: disable=no-member
+                lc_dict[str(filt)]["times"].append(phot_dict["jd"])  # pylint: disable=no-member
                 lc_dict[str(filt)]["mags"].append(phot_dict["flux"])
                 lc_dict[str(filt)]["mag_errs"].append(phot_dict["fluxerr"])
                 # lc_dict[str(filt)]["zpts"].append(phot_dict["zpt"])
             else:
                 lc_dict[str(filt)] = {
-                    "times": [Time(phot_dict["jd"], format="jd")],  # pylint: disable=no-member
+                    "times": [phot_dict["jd"],],  # pylint: disable=no-member
                     "mags": [phot_dict["flux"]],
                     "mag_errs": [phot_dict["fluxerr"]],
                     # "zpts": [phot_dict["zpt"]],
@@ -167,6 +161,11 @@ class TNSQueryAgent(QueryAgent):
         light_curves = self._format_light_curves(lc_dict)
         spectra = self._format_spectra(query_result["spectra"])
 
+        if query_result["object_type"] not in ["nan", ""]:
+            spec_class = str(query_result["object_type"])
+        else:
+            spec_class = None
+
         query_result_object = QueryResult(
             objname=objname,
             internal_names=set(internal_names),
@@ -174,6 +173,7 @@ class TNSQueryAgent(QueryAgent):
             redshift=redshift,
             light_curves=light_curves,
             spectra=spectra,
+            spec_class=spec_class,
         )
 
         return query_result_object
@@ -277,13 +277,17 @@ class TNSQueryAgent(QueryAgent):
                 objname = r_local["name"]
                 coord = self._df_coords[i]
                 internal_names = [q.strip() for q in str(r_local["internal_names"]).split(",")]
-
+                if str(r_local["type"]) != "nan":
+                    spec_class = str(r_local["type"])
+                else:
+                    spec_class = None
                 results.append(
                     QueryResult(
                         objname=objname,
                         internal_names=set(internal_names),
                         coordinates=coord,
                         redshift=r_local["redshift"],
+                        spec_class=spec_class,
                     )
                 )
             if len(results) > 0:
@@ -346,10 +350,10 @@ class TNSQueryAgent(QueryAgent):
                     objname = r["name"].item()
                     final_coord = self._df_coords[matches]
                     internal_names = [q.strip() for q in str(r["internal_names"].item()).split(",")]
-                    if r["type"].item() == "nan":
-                        spec_class = r["type"].item()
+                    if r["type"].item() not in ["nan", ""]:
+                        spec_class = str(r["type"].item())
                     else:
-                        spec_class = r["name_prefix"].item()
+                        spec_class = None
                     results.append(
                         QueryResult(
                             objname=objname,
@@ -380,3 +384,14 @@ class TNSQueryAgent(QueryAgent):
                 results.append(self._format_query_result(obj_query))
 
         return results, True
+
+    def retrieve_all_names(self, known_class: bool = True) -> NDArray[np.str_]:
+        """From the local database, retrieve all object names.
+        If known_class is True, only retrieve objects with known
+        spectroscopic class. Requires local database to be loaded.
+        """
+        if self._local_df is None:
+            raise ValueError("Local database not loaded.")
+        if known_class:
+            return self._local_df[~self._local_df.isnull()["type"]]["name"].to_numpy()
+        return self._local_df["name"].to_numpy()
