@@ -139,6 +139,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         mag_errors = np.concatenate([lc.mag_errors for lc in lc_list])
         fluxes = np.concatenate([lc.fluxes for lc in lc_list])
         flux_errors = np.concatenate([lc.flux_errors for lc in lc_list])
+        zeropoints = np.concatenate([lc.zeropoints for lc in lc_list])
         non_detections = np.concatenate([lc.upper_limit_mask for lc in lc_list])
 
         filters, filt_centers, filt_widths = self._time_series_helper(lc_list)
@@ -150,6 +151,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
                 "flux_err": flux_errors,
                 "mag": mags,
                 "mag_err": mag_errors,
+                "zpt": zeropoints,
                 "non_detections": non_detections,
                 "filters": filters,
                 "filt_centers": filt_centers,
@@ -224,17 +226,17 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         the filters of observations
         """
         return self._ts["filters"].copy().value  # type: ignore[no-any-return]
-
+    
     @property
-    def lim_mags(self) -> NDArray[np.float32]:
-        """Return limiting magnitudes of observations.
+    def zeropoints(self) -> NDArray[np.float32]:
+        """Return zeropoints of observations.
 
         Returns
         -------
         NDArray[np.float32]
-        the limiting magnitudes of observations
+        the zeropoints of observations
         """
-        return self._ts["lim_mags"].copy().value  # type: ignore[no-any-return]
+        return self._ts["zpt"].copy().value  # type: ignore[no-any-return]
 
     @property
     def upper_limit_mask(self) -> NDArray[np.bool_]:
@@ -322,6 +324,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             t0 = np.median([l.peak["time"].mjd for l in self._lightcurves])
         for lc in self._lightcurves:
             lc.phase(t0=t0, periodic=periodic, period=period)
+        self._generate_time_series()
 
     def calculate_period(self) -> float:
         """Estimate multi-band period of light curves in set."""
@@ -332,8 +335,16 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             detections["filters"],
             detections["mag_err"],
         ).autopower()
-        best_freq: float = frequency[np.argmax(power)]
+        best_freq: float = frequency[np.nanargmax(power)]
         return 1.0 / best_freq
+    
+    def normalize(self: PhotT) -> None:
+        """Normalize the light curves in the set."""
+        peak_fluxes = [lc.peak['flux'] for lc in self._lightcurves]
+        for lc in self._lightcurves:
+            lc.fluxes /= np.nanmax(peak_fluxes)
+            lc.flux_errors /= np.nanmax(peak_fluxes)
+        self._generate_time_series()
 
     def plot(self, ax: Axes, formatter: Optional[Formatter] = None, mags: bool = True) -> Axes:
         """Plots the collection of light curves.
@@ -368,7 +379,9 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         light_curve: LightCurve
             the light curve to add to the set of photometry
         """
+        light_curve.merge_close_times(eps=1e-5)  # pylint: disable=no-member
         for lc in self._lightcurves:
+            # remove any duplicate times
             if lc.filter == light_curve.filter:
                 lc.merge(light_curve)
                 self._generate_time_series()
@@ -469,10 +482,12 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         nan_mask = np.zeros(len(self._ts), dtype=bool)
 
         # Iterate over each column and update the mask
-        for col in ["flux", "flux_err", "mag", "mag_err"]:
-            nan_mask |= ~np.isfinite(self._ts[col])
-        if not use_fluxes:
-            nan_mask |= ~np.isfinite(self._ts["lim_mags"])
+        if use_fluxes:
+            for col in ["flux", "flux_err"]:
+                nan_mask |= ~np.isfinite(self._ts[col])
+        else:
+            for col in ["mag", "mag_err", "lim_mags"]:
+                nan_mask |= ~np.isfinite(self._ts[col])
 
         masked_rows = self._ts[nan_mask]
         self._ts.remove_rows(masked_rows)

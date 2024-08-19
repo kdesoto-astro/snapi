@@ -27,74 +27,90 @@ class ALeRCEQueryAgent(QueryAgent):
             2: "r",
             3: "i",
         }
-        self._mag_keys = [
-            "mag",
-        ]
-        self._mag_err_keys = [
-            "e_mag",
-        ]
 
     def _photometry_helper(self, objname: str) -> tuple[set[LightCurve], bool]:
         """
         Helper function for querying photometry data.
         """
-        try:
-            # Getting detections for an object
-            lc = self._client.query_lightcurve(objname, format="pandas")
-            dets = list(lc["detections"])[0]
-            detections = pd.DataFrame.from_dict(dets)
-
-            try:  # not available with older versions of alerce-client
-                forced_phot = list(lc["forced_photometry"])[0]
-                forced_detections = pd.DataFrame.from_dict(forced_phot)
-                all_detections = pd.concat([detections, forced_detections], join="inner")
-            except KeyError:
-                all_detections = detections
-
-            if "mjd" not in all_detections.columns:
-                return set(), False
-
-            lcs: set[LightCurve] = set()
-            if len(all_detections) == 0:
-                return lcs, False
-            for b in np.unique(all_detections["fid"]):
-                filt = Filter(
-                    instrument="ZTF",
-                    band=self._int_to_band[b],
-                    center=np.nan * u.AA,  # pylint: disable=no-member
-                )  # pylint: disable=no-member
-                mask = all_detections["fid"] == b
-
-                mags = np.nan * np.ones(len(all_detections[mask]))
-                mag_errs = np.nan * np.ones(len(all_detections[mask]))
-                zpts = np.nan * np.ones(len(all_detections[mask]))
-
-                for mag_key in self._mag_keys:
-                    if mag_key in all_detections.columns:
-                        mags = all_detections[mask][mag_key]
-                        break
-                for mag_err_key in self._mag_err_keys:
-                    if mag_err_key in all_detections.columns:
-                        mag_errs = all_detections[mask][mag_err_key]
-                        break
-                for mag_err_key in self._mag_err_keys:
-                    if mag_err_key in all_detections.columns:
-                        mag_errs = all_detections[mask][mag_err_key]
-                        break
-
-                lc = LightCurve(
-                    times=Time(all_detections[mask]["mjd"], format="mjd"),
-                    mags=mags,
-                    mag_errs=mag_errs,
-                    upper_limits=np.zeros(len(all_detections[mask]), dtype=bool),
-                    zpts=zpts,
-                    filt=filt,
-                )
-                lcs.add(lc)
-            return lcs, True
-
-        except APIError:
+        if objname[:3] != "ZTF":
             return set(), False
+        # Getting detections for an object
+        lc = self._client.query_lightcurve(objname, format="pandas")
+        dets = list(lc['detections'])[0]
+        detections = pd.DataFrame(dets)
+
+        try:  # not available with older versions of alerce-client
+            forced_dets = list(lc['forced_photometry'])[0]
+            forced_detections = pd.DataFrame(forced_dets)
+            non_na_columns = detections.columns[detections.notna().any()]
+            non_na_columns2 = forced_detections.columns[forced_detections.notna().any()]
+            all_detections = pd.concat([detections[non_na_columns], forced_detections[non_na_columns2]])
+        except KeyError:
+            all_detections = detections
+
+        if "mjd" not in all_detections.columns:
+            return set(), False
+        if len(all_detections) == 0:
+            return set(), False
+                
+        # add extra fields
+        if 'extra_fields' in all_detections.columns:
+            extra_fields = all_detections['extra_fields'].apply(pd.Series)
+            cols_to_use = extra_fields.columns.difference(all_detections.columns)
+            all_detections = pd.concat([all_detections, extra_fields[cols_to_use]], axis=1,)
+            all_detections.drop(columns=['extra_fields'], inplace=True)
+        
+        all_detections.reset_index(drop=True, inplace=True)
+                
+        # add missing fields
+        if 'mag' not in all_detections.columns:
+            if 'magpsf' in all_detections.columns:
+                all_detections["mag"] = all_detections["magpsf"]
+                all_detections["e_mag"] = all_detections["sigmapsf"]
+                if 'magap' in all_detections.columns:
+                    all_detections['mag'].fillna(all_detections['magap'])
+                    all_detections["e_mag"].fillna(all_detections["sigmagap"])
+            else:
+                all_detections["mag"] = all_detections["magap"]
+                all_detections["e_mag"] = all_detections["sigmagap"]
+        else:
+            if 'magpsf' in all_detections.columns:
+                all_detections['mag'].fillna(all_detections['magpsf'])
+                all_detections["e_mag"].fillna(all_detections["sigmapsf"])
+            if 'magap' in all_detections.columns:
+                all_detections['mag'].fillna(all_detections['magap'])
+                all_detections["e_mag"].fillna(all_detections["sigmagap"])
+
+        if 'magzpsci' not in all_detections.columns:
+            all_detections['magzpsci'] = np.nan
+        
+        # find non-detections
+        all_detections['upper_limit'] = False
+        nondetect_mask = (all_detections['mag'] == 100.) | (all_detections['mag'].isna())
+        if "diffmaglim" in all_detections.columns:
+            all_detections.loc[nondetect_mask, 'mag'] = all_detections.loc[nondetect_mask, 'diffmaglim']
+            all_detections.loc[nondetect_mask, 'e_mag'] = np.nan
+            all_detections.loc[nondetect_mask, 'upper_limit'] = True
+        
+        lcs: set[LightCurve] = set()
+        for b in np.unique(all_detections["fid"]):
+            filt = Filter(
+                instrument="ZTF",
+                band=self._int_to_band[b],
+                center=np.nan * u.AA,  # pylint: disable=no-member
+            )  # pylint: disable=no-member
+            mask = all_detections["fid"] == b
+
+            lc = LightCurve(
+                times=Time(all_detections.loc[mask, "mjd"], format="mjd"),
+                mags=all_detections.loc[mask, 'mag'],
+                mag_errs=all_detections.loc[mask, 'e_mag'],
+                upper_limits=all_detections.loc[mask, 'upper_limit'],
+                zpts=all_detections.loc[mask, 'magzpsci'],
+                filt=filt,
+            )
+            lcs.add(lc)
+        return lcs, True
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
         """

@@ -81,21 +81,17 @@ class TNSQueryAgent(QueryAgent):
         """
         light_curves = set()
         for phot_dict in lc_dict.values():
-            phot_mags = np.array(phot_dict["mags"], dtype=object)
-            phot_mags[phot_mags == ""] = np.nan
-            phot_dict["mags"] = phot_mags.astype(np.float32)
-
-            phot_mag_errs = np.array(phot_dict["mag_errs"], dtype=object)
-            phot_mag_errs[phot_mag_errs == ""] = np.nan
-            phot_dict["mag_errs"] = phot_mag_errs.astype(np.float32)
+            phot_df = pd.DataFrame({k: v for k, v in phot_dict.items() if k != "filt"})
+            phot_df.replace('', 'nan', inplace=True)
+            phot_df = phot_df.astype(np.float32)
 
             light_curve = LightCurve(
-                times=phot_dict["times"],
-                mags=phot_dict["mags"],
-                mag_errs=phot_dict["mag_errs"],
-                upper_limits=np.zeros_like(phot_dict["mags"], dtype=bool),
+                times=Time(phot_df["times"], format='jd', scale='utc'),  # pylint: disable=no-member
+                mags=phot_df["mags"],
+                mag_errs=phot_df["mag_errs"],
+                upper_limits=np.zeros_like(phot_df["mags"], dtype=bool),
                 # zpts=phot_dict["zpts"],
-                filt=phot_dict["filt"],
+                filt=phot_dict['filt'],
             )
             light_curves.add(light_curve)
         return light_curves
@@ -150,15 +146,13 @@ class TNSQueryAgent(QueryAgent):
                 # lim_mag=phot_dict["lim_mag"],
             )
             if str(filt) in lc_dict:
-                lc_dict[str(filt)]["times"].append(
-                    Time(phot_dict["jd"], format="jd")
-                )  # pylint: disable=no-member
+                lc_dict[str(filt)]["times"].append(phot_dict["jd"])  # pylint: disable=no-member
                 lc_dict[str(filt)]["mags"].append(phot_dict["flux"])
                 lc_dict[str(filt)]["mag_errs"].append(phot_dict["fluxerr"])
                 # lc_dict[str(filt)]["zpts"].append(phot_dict["zpt"])
             else:
                 lc_dict[str(filt)] = {
-                    "times": [Time(phot_dict["jd"], format="jd")],  # pylint: disable=no-member
+                    "times": [phot_dict["jd"],],  # pylint: disable=no-member
                     "mags": [phot_dict["flux"]],
                     "mag_errs": [phot_dict["fluxerr"]],
                     # "zpts": [phot_dict["zpt"]],

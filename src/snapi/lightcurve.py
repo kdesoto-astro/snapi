@@ -10,7 +10,7 @@ from astropy.table.table import QTable
 from astropy.timeseries import LombScargle, TimeSeries
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
-from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
+#from pyts.image import GramianAngularField, MarkovTransitionField, RecurrencePlot
 
 from .base_classes import Observer, Plottable
 from .formatter import Formatter
@@ -90,16 +90,16 @@ def resample_helper(cen: Sequence[T], unc: Sequence[T], num: int) -> NDArray[np.
     return sampled_vals
 
 
-@numba.njit(parallel=True)  # type: ignore
+#@numba.njit(parallel=True)  # type: ignore
 def update_merged_fluxes(keep_idxs, flux, flux_unc):
     """Update merged fluxes with numba."""
     new_f = []
     new_ferr = []
-    for i in numba.prange(len(keep_idxs)):  # pylint: disable=not-an-iterable
+    for i in range(len(keep_idxs)):  # pylint: disable=not-an-iterable
         if i == len(keep_idxs) - 1:
-            repeat_idx_subset = np.arange(keep_idxs[i], keep_idxs[i + 1])
-        else:
             repeat_idx_subset = np.arange(keep_idxs[i], len(flux))
+        else:
+            repeat_idx_subset = np.arange(keep_idxs[i], keep_idxs[i + 1])
 
         weights = 1.0 / flux_unc[repeat_idx_subset] ** 2
         new_f.append(np.average(flux[repeat_idx_subset], weights=weights))
@@ -196,44 +196,48 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                     "non_detections": upper_limits,
                 }
             )
-
         self._rng = np.random.default_rng()
         self._sort()  # sort by time
-        self._complete()  # fills in missing info
+        self._complete()  # fills in missing or inconsistent values
 
-    def _complete(self) -> None:
+
+    def _complete(self, update_mags: bool=True, update_fluxes: bool=True) -> None:
         """Given zeropoints, fills in missing apparent
         magnitudes from fluxes and vice versa.
         """
-        # first convert fluxes to missing apparent mags
-        missing_mag = (np.isnan(self._ts["mag"])) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["flux"]))
-        sub_table = self._ts[missing_mag]
-        self._ts["mag"][missing_mag] = -2.5 * np.log10(sub_table["flux"]) + sub_table["zpt"]
+        if update_mags:
+            # first convert fluxes to missing apparent mags
+            missing_mag = (~np.isnan(self._ts["zpt"])) & (~np.isnan(self._ts["flux"]))
+            sub_table = self._ts[missing_mag]
+            if len(sub_table) > 0:
+                self._ts['mag'][missing_mag] = -2.5 * np.log10(sub_table["flux"]) + sub_table["zpt"]
 
-        # uncertainties
-        missing_magunc = (
-            np.isnan(self._ts["mag_unc"]) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["flux_unc"]))
-        )
-        sub_table = self._ts[missing_magunc]
-        if len(sub_table) > 0:
-            self._ts["mag_unc"][missing_magunc] = (
-                2.5 / np.log(10.0) * (sub_table["flux_unc"] / sub_table["flux"])
+            # uncertainties
+            missing_magunc = (
+                ~np.isnan(self._ts["flux"]) & (~np.isnan(self._ts["flux_unc"]))
             )
+            sub_table = self._ts[missing_magunc]
+            if len(sub_table) > 0:
+                self._ts['mag_unc'][missing_magunc] = (
+                    2.5 / np.log(10.0) * (sub_table["flux_unc"] / sub_table["flux"])
+                )
 
-        # then convert mags to missing fluxes
-        missing_flux = np.isnan(self._ts["flux"]) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["mag"]))
-        sub_table = self._ts[missing_flux]
-        if len(sub_table) > 0:
-            self._ts["flux"][missing_flux] = 10.0 ** (-1.0 * (sub_table["mag"] - sub_table["zpt"]) / 2.5)
+        if update_fluxes:
+            # then convert mags to missing fluxes
+            missing_flux = (~np.isnan(self._ts["zpt"])) & (~np.isnan(self._ts["mag"]))
+            sub_table = self._ts[missing_flux]
+            if len(sub_table) > 0:
+                self._ts["flux"][missing_flux] = 10.0 ** (-1.0 * (sub_table["mag"] - sub_table["zpt"]) / 2.5)
 
-        # uncertainties
-        missing_fluxunc = (
-            np.isnan(self._ts["flux_unc"]) & ~np.isnan(self._ts["zpt"]) & (~np.isnan(self._ts["mag_unc"]))
-        )
-        sub_table = self._ts[missing_fluxunc]
-        self._ts["flux_unc"][missing_fluxunc] = (
-            np.log(10.0) / 2.5 * (sub_table["flux"] * sub_table["mag_unc"])
-        )
+            # uncertainties
+            missing_fluxunc = (
+                (~np.isnan(self._ts["mag_unc"]) & (~np.isnan(self._ts["flux"])))
+            )
+            sub_table = self._ts[missing_fluxunc]
+            if len(sub_table) > 0:
+                self._ts["flux_unc"][missing_fluxunc] = (
+                    (np.log(10.0) / 2.5) * (sub_table["flux"] * sub_table["mag_unc"])
+                )
 
     def _sort(self) -> None:
         """Sort light curve by time."""
@@ -264,9 +268,11 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
     @fluxes.setter
     def fluxes(self, new_fluxes: NDArray[np.float32]) -> None:
-        """Replace flux values."""
+        """Replace flux values. Adjusts mags accordingly."""
         self._ts.replace_column("flux", new_fluxes)
-        self._complete()
+        self._ts['mags'] = np.nan
+        self._ts['mag_unc'] = np.nan
+        self._complete(update_fluxes=False) # update mags
 
     @property
     def flux_errors(self) -> Any:
@@ -277,9 +283,11 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
     @flux_errors.setter
     def flux_errors(self, ferr: NDArray[np.float32]) -> None:
-        """Replace flux uncertainty values."""
+        """Replace flux uncertainty values. Adjusts mags accordingly."""
         self._ts.replace_column("flux_unc", ferr)
-        self._complete()
+        self._ts['mags'] = np.nan
+        self._ts['mag_unc'] = np.nan
+        self._complete(update_fluxes=False) # update mags
 
     @property
     def mags(self) -> Any:
@@ -290,9 +298,11 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
     @mags.setter
     def mags(self, new_mags: NDArray[np.float32]) -> None:
-        """Replace magnitude values."""
+        """Replace magnitude values. Adjusts fluxes accordingly."""
         self._ts.replace_column("mag", new_mags)
-        self._complete()
+        self._ts['flux'] = np.nan
+        self._ts['flux_unc'] = np.nan
+        self._complete(update_mags=False) # update fluxes
 
     @property
     def mag_errors(self) -> Any:
@@ -303,9 +313,11 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
     @mag_errors.setter
     def mag_errors(self, merr: NDArray[np.float32]) -> None:
-        """Replace magnitude uncertainty values."""
+        """Replace magnitude uncertainty values. Adjusts fluxes accordingly."""
         self._ts.replace_column("mag_unc", merr)
-        self._complete()
+        self._ts['flux'] = np.nan
+        self._ts['flux_unc'] = np.nan
+        self._complete(update_mags=False) # first update fluxes
 
     @property
     def zeropoints(self) -> Any:
@@ -315,10 +327,20 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         return self._ts["zpt"].value  # pylint: disable=no-member; type: ignore
 
     @zeropoints.setter
-    def zeropoints(self, new_zpts: NDArray[np.float32]) -> None:
-        """Replace zeropoint values."""
+    def zeropoints(self, new_zpts: NDArray[np.float32], adjust_mags: bool=False) -> None:
+        """Replace zeropoint values.
+        If adjust_mags is True, recalibrate magnitudes accordingly.
+        By default, recalibrates fluxes.
+        """
         self._ts.replace_column("zpt", new_zpts)
-        self._complete()
+        if adjust_mags:
+            self._ts['mag'] = np.nan
+            self._ts['mag_unc'] = np.nan
+            self._complete(update_fluxes=False) # adjusts mags
+        else:
+            self._ts['flux'] = np.nan
+            self._ts['flux_unc'] = np.nan
+            self._complete(update_mags=False) # adjust fluxes
 
     @property
     def filter(self) -> Optional[Filter]:
@@ -341,11 +363,11 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         return self._ts[~self.upper_limit_mask].copy()  # pylint: disable=invalid-unary-operand-type
 
     @property
-    def peak(self) -> dict[str, Any]:
+    def peak(self) -> Any:
         """The brightest observation in light curve.
         Return as dictionary.
         """
-        return self._ts[np.argmax(self._ts["flux"])].as_dict()  # type: ignore[no-any-return]
+        return self._ts[np.nanargmax(self._ts["flux"] - self._ts["flux_unc"])]  # type: ignore[no-any-return]
 
     def phase(
         self, t0: Optional[float] = None, periodic: bool = False, period: Optional[float] = None
@@ -374,7 +396,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             self.detections["mag_unc"],
         )
         frequency, power = ls.autopower()
-        best_freq: float = frequency[np.argmax(power)]
+        best_freq: float = frequency[np.nanargmax(power)]
         return 1.0 / best_freq
 
     def truncate(self, max_t: Optional[float] = np.inf, min_t: Optional[float] = -np.inf) -> None:
@@ -389,6 +411,13 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                 np.arange(len(self._ts)), size=len(self._ts) - n_points, replace=False
             )
             self._ts.remove_rows(remove_ind)
+
+    def calibrate_fluxes(self, new_zpt: float) -> None:
+        """Calibrate fluxes using zeropoints."""
+        self._ts["flux"] *= 10.0 ** ((new_zpt - self._ts["zpt"]) / 2.5)
+        self._ts["flux_unc"] *= 10.0 ** ((new_zpt - self._ts["zpt"]) / 2.5)
+        self._ts["zpt"] = new_zpt
+        # shouldn't need any recompletes or sorts
 
     def plot(
         self,
@@ -460,16 +489,21 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         """Merge times that are close enough together
         (e.g. in the same night). Only in-place at the moment.
         """
-        t_diffs = np.diff(self._ts["time"])
-        repeat_idxs = np.abs(t_diffs) < eps * u.d  # pylint: disable=no-member
+        t_diffs = np.diff(self._ts["time"].mjd)
+        repeat_idxs = np.abs(t_diffs) < eps # pylint: disable=no-member
+
+        if np.all(~repeat_idxs): # no repeats
+            return
+        
         repeat_idxs = np.insert(repeat_idxs, 0, False)
         keep_idxs = np.argwhere(~repeat_idxs)
 
         new_f, new_ferr = update_merged_fluxes(keep_idxs, self._ts["flux"], self._ts["flux_unc"])
-        self._ts.remove_rows(np.argwhere(repeat_idxs))
-        self._ts.replace_column("flux", new_f)
-        self._ts.replace_column("flux_unc", new_ferr)
+        self._ts.remove_rows(np.argwhere(repeat_idxs).ravel())
+        self.fluxes = new_f
+        self.flux_errors = new_ferr
         self._complete()
+        return
 
     def merge(self, other: LightT) -> None:
         """Merge other light curve into this one, assuming they are
@@ -479,12 +513,12 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             raise ValueError("Filters must be the same to merge light curves!")
 
         ts_df = self._ts.to_pandas()
-
+        
         if len(other.detections) > 0:
             other_det_df = other.detections.to_pandas()
 
             # among detections, fill in missing errors/zpts
-            ts_df[~ts_df["non_detections"]].combine_first(other_det_df)
+            ts_df.loc[~ts_df['non_detections'], :] = ts_df[~ts_df["non_detections"]].combine_first(other_det_df)
 
             # now for times that exist in both, we want to replace non-detections
             # with detections, where possible
@@ -494,17 +528,26 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
             # finally, add new times
             nonrepeat_idxs = other_det_df.index.difference(ts_df.index)
-            ts_df = pd.concat([ts_df, other_det_df.loc[nonrepeat_idxs]], ignore_index=False)
+            if not nonrepeat_idxs.empty:
+                non_na_columns_ts = ts_df.columns[~ts_df.isna().all()]
+                non_na_columns = other_det_df.columns[~other_det_df.isna().all()]
+                ts_df = pd.concat([ts_df[non_na_columns_ts], other_det_df.loc[nonrepeat_idxs, non_na_columns]], ignore_index=False)
 
         if len(other.non_detections) > 0:
             other_nondet_df = other.non_detections.to_pandas()
 
             # update non-detections similarly
-            ts_df[ts_df["non_detections"]].combine_first(other_nondet_df)
+            ts_df.loc[ts_df['non_detections'],:] = ts_df[ts_df["non_detections"]].combine_first(other_nondet_df)
             nonrepeat_idxs_2 = other_nondet_df.index.difference(ts_df.index)
-            ts_df = pd.concat([ts_df, other_nondet_df.loc[nonrepeat_idxs_2]], ignore_index=False)
-
-        self._ts = TimeSeries.from_pandas(ts_df)
+            if not nonrepeat_idxs_2.empty:
+                non_na_columns_ts = ts_df.columns[~ts_df.isna().all()]
+                non_na_columns = other_nondet_df.columns[~other_nondet_df.isna().all()]
+                ts_df = pd.concat([ts_df[non_na_columns_ts], other_nondet_df.loc[nonrepeat_idxs_2, non_na_columns]], ignore_index=False)
+        
+        for col in self._ts.columns: # ensure all original columns exist
+            if (col != 'time') and (col not in ts_df.columns):
+                ts_df[col] = np.nan
+        self._ts = TimeSeries.from_pandas(ts_df).filled(np.nan)
         self._sort()
         self._complete()
 
@@ -619,7 +662,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                     time_series.meta["center"] * u.AA,  # pylint: disable=no-member
                     time_series.meta["width"] * u.AA,  # pylint: disable=no-member,
                 )
-            except TypeError:
+            except KeyError:
                 extracted_filter = Filter(
                     time_series.meta["instrument"],
                     time_series.meta["band"],

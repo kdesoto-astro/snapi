@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import TypeVar
-
+import copy
 from matplotlib.axes import Axes
 
 MeasT = TypeVar("MeasT", bound="MeasurementSet")
-
+BaseT = TypeVar("BaseT", bound="Base")
 
 class Base(ABC):
     """Base class which all objects will inherit from.
@@ -15,6 +15,10 @@ class Base(ABC):
     @abstractmethod
     def __init__(self) -> None:
         self._id: str = ""
+
+    def copy(self: BaseT) -> BaseT:
+        """Return a deep copy of the object."""
+        return copy.deepcopy(self)
 
     @property
     def id(self) -> str:

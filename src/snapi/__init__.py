@@ -9,6 +9,7 @@ from .photometry import Photometry
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
 from .transient import Transient
+from .analysis import SamplerResult, Sampler
 
 __all__ = [
     "Base",
@@ -22,4 +23,6 @@ __all__ = [
     "Transient",
     "Formatter",
     "Filter",
+    "SamplerResult",
+    "Sampler",
 ]
