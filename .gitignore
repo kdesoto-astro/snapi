@@ -1,3 +1,6 @@
+# DUSTMAPS
+data/dustmaps/*
+
 # API KEYS
 src/snapi/api_keys.py
 # Byte-compiled / optimized / DLL files

@@ -1,20 +1,18 @@
 """Stores Photometry class and helper functions."""
 import copy
-from typing import Any, List, Optional, Set, Tuple, Type, TypeVar
+from typing import Any, List, Optional, Tuple, Type, TypeVar
 
-import astropy.units as u
 import george
 import numpy as np
 import scipy
 from astropy.time import Time
 from astropy.timeseries import LombScargleMultiband, TimeSeries
-
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 from .base_classes import MeasurementSet, Plottable
 from .formatter import Formatter
-from .lightcurve import LightCurve
+from .lightcurve import Filter, LightCurve
 from .utils import list_datasets
 
 PhotT = TypeVar("PhotT", bound="Photometry")
@@ -64,9 +62,9 @@ def generate_gp(
 class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-methods
     """Contains collection of LightCurve objects."""
 
-    def __init__(self, lcs: Optional[set[LightCurve]] = None) -> None:
+    def __init__(self, lcs: Optional[list[LightCurve]] = None) -> None:
         if lcs is None:
-            self._lightcurves: Set[LightCurve] = set()
+            self._lightcurves: list[LightCurve] = []
         else:
             self._lightcurves = copy.deepcopy(lcs)
         self._rng: np.random.Generator = np.random.default_rng()
@@ -129,20 +127,19 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """Generate time series from set of light curves."""
         if len(self._lightcurves) == 0:
             return None
-        lc_list = list(self._lightcurves)
         times = Time(
-            np.concatenate([lc.times for lc in lc_list]),
+            np.concatenate([lc.times for lc in self._lightcurves]),
             format="mjd",
             scale="utc",
         )
-        mags = np.concatenate([lc.mags for lc in lc_list])
-        mag_errors = np.concatenate([lc.mag_errors for lc in lc_list])
-        fluxes = np.concatenate([lc.fluxes for lc in lc_list])
-        flux_errors = np.concatenate([lc.flux_errors for lc in lc_list])
-        zeropoints = np.concatenate([lc.zeropoints for lc in lc_list])
-        non_detections = np.concatenate([lc.upper_limit_mask for lc in lc_list])
+        mags = np.concatenate([lc.mags for lc in self._lightcurves])
+        mag_errors = np.concatenate([lc.mag_errors for lc in self._lightcurves])
+        fluxes = np.concatenate([lc.fluxes for lc in self._lightcurves])
+        flux_errors = np.concatenate([lc.flux_errors for lc in self._lightcurves])
+        zeropoints = np.concatenate([lc.zeropoints for lc in self._lightcurves])
+        non_detections = np.concatenate([lc.upper_limit_mask for lc in self._lightcurves])
 
-        filters, filt_centers, filt_widths = self._time_series_helper(lc_list)
+        filters, filt_centers, filt_widths = self._time_series_helper(self._lightcurves)
 
         self._ts = TimeSeries(
             {
@@ -226,7 +223,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         the filters of observations
         """
         return self._ts["filters"].copy().value  # type: ignore[no-any-return]
-    
+
     @property
     def zeropoints(self) -> NDArray[np.float32]:
         """Return zeropoints of observations.
@@ -272,13 +269,13 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         return self._ts[self._ts["non_detections"]].copy()
 
     @property
-    def light_curves(self) -> Set[LightCurve]:
+    def light_curves(self) -> list[LightCurve]:
         """Return copy of set of light curves, as
         to not impact the underlying LCs.
 
         Returns
         -------
-        Set[LightCurve]
+        List[LightCurve]
         the set of light curves
         """
         return copy.deepcopy(self._lightcurves)
@@ -298,16 +295,16 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         the Photometry object with only the
         desired instrument's measurements
         """
-        filtered_lcs = {
+        filtered_lcs = [
             lc for lc in self._lightcurves if (lc.filter is not None and lc.filter.instrument == instrument)
-        }
+        ]
         return self.__class__(filtered_lcs)
 
     def filter(self: PhotT, filts: Any) -> PhotT:
         """Return new Photometry with only light curves
         from filters in 'filts.'
         """
-        filtered_lcs = {lc for lc in self._lightcurves if str(lc.filter) in filts}
+        filtered_lcs = [lc for lc in self._lightcurves if str(lc.filter) in filts]
         return self.__class__(filtered_lcs)
 
     def phase(
@@ -321,7 +318,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         if periodic and period is None:
             period = self.calculate_period()
         if t0 is None:
-            t0 = np.median([l.peak["time"].mjd for l in self._lightcurves])
+            t0 = np.nanmedian([l.peak["time"] for l in self._lightcurves])
         for lc in self._lightcurves:
             lc.phase(t0=t0, periodic=periodic, period=period)
         self._generate_time_series()
@@ -337,10 +334,10 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         ).autopower()
         best_freq: float = frequency[np.nanargmax(power)]
         return 1.0 / best_freq
-    
+
     def normalize(self: PhotT) -> None:
         """Normalize the light curves in the set."""
-        peak_fluxes = [lc.peak['flux'] for lc in self._lightcurves]
+        peak_fluxes = [lc.peak["flux"] for lc in self._lightcurves]
         for lc in self._lightcurves:
             lc.fluxes /= np.nanmax(peak_fluxes)
             lc.flux_errors /= np.nanmax(peak_fluxes)
@@ -380,13 +377,14 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             the light curve to add to the set of photometry
         """
         light_curve.merge_close_times(eps=1e-5)  # pylint: disable=no-member
+
         for lc in self._lightcurves:
             # remove any duplicate times
             if lc.filter == light_curve.filter:
                 lc.merge(light_curve)
                 self._generate_time_series()
                 return None
-        self._lightcurves.add(copy.deepcopy(light_curve))
+        self._lightcurves.append(light_curve.copy())
         self._generate_time_series()  # update time series
         return None
 
@@ -416,11 +414,22 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """
         if len(self._lightcurves) > n_lightcurves:
             raise ValueError("Number of light curves exceeds the desired limit.")
+        it = 0
+        lcs_orig = copy.deepcopy(self._lightcurves)
         while len(self._lightcurves) < n_lightcurves:
-            num_new = min(len(self._lightcurves), n_lightcurves - len(self._lightcurves))
-            sampled_idxs = np.random.choice(len(self._lightcurves), num_new, replace=False)
-            new_lcs = copy.deepcopy(np.asarray(self._lightcurves))
-            self._lightcurves.update(new_lcs[sampled_idxs])
+            it += 1
+            for lc in lcs_orig:
+                new_lc = lc.copy()
+                if lc.filter is not None:
+                    new_lc.filter = Filter(
+                        instrument=lc.filter.instrument,
+                        band=lc.filter.band + str(it),
+                        center=lc.filter.center,
+                        width=lc.filter.width,
+                    )
+                self._lightcurves.append(new_lc)
+                if len(self._lightcurves) == n_lightcurves:
+                    break
         self._generate_time_series()  # update time series
 
     def __len__(self) -> int:
@@ -446,13 +455,18 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """Helper function for dense_array method."""
         gaussian_process = generate_gp(gp_vals, gp_errs, stacked_data)
 
-        keep_idxs = np.where(np.abs(np.diff(self.times)) > max_spacing * u.d)[0]  # pylint: disable=no-member
+        keep_idxs = np.where(np.abs(np.diff(self.times)) > max_spacing)[0]  # [1,]
+        keep_idxs = np.insert(keep_idxs + 1, 0, 0)  # [0,2]
+        # simple case: ((time1, filt1), (time1, filt2), (time2, filt1))
+        # here, we want keep_idxs to be [0,2]
+        # idx_map is [0, 0, 1]
+
         dense_times = self.times[keep_idxs]
 
         # map reduced indices to original indices
         idx_map = np.zeros(len(self.times), dtype=bool)
-        idx_map[keep_idxs] = True
-        idx_map = np.cumsum(idx_map) - 1
+        idx_map[keep_idxs] = True  # [True, False, True]
+        idx_map = np.cumsum(idx_map) - 1  # [0, 0, 1]
 
         x_pred = np.zeros((len(dense_times) * nfilts, 2))
 
@@ -462,9 +476,9 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
 
         pred, pred_var = gaussian_process.predict(gp_vals, x_pred, return_var=True)
 
-        dense_arr = np.zeros((len(dense_times), nfilts * 3 + 4), dtype=np.float32)
+        dense_arr = np.zeros((len(dense_times), nfilts * 5 + 1), dtype=np.float32)
         dense_arr[:, 0] = dense_times
-        dense_arr[:, 1 + 2 * nfilts] = 1
+        dense_arr[:, 1 + 2 * nfilts : 1 + 3 * nfilts] = 1  # interpolated mask
 
         for filt in np.unique(self.filters):
             filt_int = filt_to_int[filt]
@@ -486,17 +500,25 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             for col in ["flux", "flux_err"]:
                 nan_mask |= ~np.isfinite(self._ts[col])
         else:
-            for col in ["mag", "mag_err", "lim_mags"]:
+            for col in [
+                "mag",
+                "mag_err",
+            ]:
                 nan_mask |= ~np.isfinite(self._ts[col])
 
-        masked_rows = self._ts[nan_mask]
-        self._ts.remove_rows(masked_rows)
+        masked_idxs = np.nonzero(nan_mask)[0]
+        masked_rows = self._ts[masked_idxs]
+        self._ts.remove_rows(masked_idxs)
 
         if use_fluxes:
             gp_vals = self.fluxes
             gp_errs = self.flux_errors
         else:
-            gp_vals = self.mags - self.lim_mags
+            gp_vals = (
+                self.mags
+                - np.nanmax(self.mags[~self.upper_limit_mask])
+                - 3.0 * np.nanmax(self.mag_errors[~self.upper_limit_mask])
+            )
             gp_errs = self.mag_errors
 
         return gp_vals, gp_errs, use_fluxes, masked_rows
@@ -532,20 +554,20 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
 
         for filt in np.unique(self.filters):
             filt_int = filt_to_int[filt]
-            filt_mask = self.filters == filt
+            filt_mask = (self.filters == filt) & (~self.upper_limit_mask)
             sub_series = self._ts[filt_mask]
             sub_idx_map = idx_map[filt_mask]
-
-            if not use_fluxes:
-                dense_arr[:, 1 + filt_int] += sub_series["lim_mags"][0]
 
             # fill in true values
             dense_arr[sub_idx_map, 1 + filt_int] = gp_vals[filt_mask]
             dense_arr[sub_idx_map, 1 + nfilts + filt_int] = gp_errs[filt_mask]
             dense_arr[sub_idx_map, 1 + 2 * nfilts + filt_int] = 0
-            dense_arr[sub_idx_map, 1 + 3 * nfilts] = sub_series["lim_mags"][0]
-            dense_arr[sub_idx_map, 2 + 3 * nfilts] = sub_series["filt_centers"][0]
-            dense_arr[sub_idx_map, 2 + 3 * nfilts] = sub_series["filt_widths"][0]
+            dense_arr[:, 1 + 3 * nfilts + filt_int] = sub_series["filt_centers"][0]
+            dense_arr[:, 1 + 4 * nfilts + filt_int] = sub_series["filt_widths"][0]
+
+            if not use_fluxes:
+                dense_arr[:, 1 + filt_int] += np.nanmax(self._ts["mag"][~self.upper_limit_mask])
+                dense_arr[:, 1 + filt_int] += 3.0 * np.nanmax(self._ts["mag_err"][~self.upper_limit_mask])
 
             # fix broken errors - usually if no points in that band
             mask = dense_arr[:, 1 + nfilts + filt_int] <= 0.0
@@ -558,6 +580,24 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         self._ts.sort("time")
 
         return dense_arr
+
+    def absolute(self: PhotT, redshift: float) -> PhotT:
+        """Return new Photometry with absolute magnitudes.
+        Shifts zeropoints accordingly.
+        """
+        new_lcs = []
+        for lc in self._lightcurves:
+            new_lcs.append(lc.absolute(redshift))
+        return self.__class__(new_lcs)
+
+    def correct_extinction(
+        self: PhotT, mwebv: Optional[float] = None, coordinates: Optional[Any] = None
+    ) -> PhotT:
+        """Return new Photometry with extinction corrected magnitudes."""
+        new_lcs = []
+        for lc in self._lightcurves:
+            new_lcs.append(lc.correct_extinction(mwebv=mwebv, coordinates=coordinates))
+        return self.__class__(new_lcs)
 
     def save(self, filename: str, path: str = "photometry") -> None:
         """Save the Photometry object to and HDF5 file.
@@ -584,7 +624,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         filename: str
             the filename to load the Photometry object from
         """
-        lcs = set()
+        lcs = []
         # get all paths that start with path
         lc_path_list = [
             lc_path
@@ -593,7 +633,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         ]
         for lc_path in lc_path_list:
             lc = LightCurve.load(filename, path=lc_path)
-            lcs.add(lc)
+            lcs.append(lc)
 
         phot: PhotT = cls(lcs)
         return phot

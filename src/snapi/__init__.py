@@ -1,5 +1,8 @@
+import numpy as np  # pylint: disable
+
 from snapi.base_classes import Base, MeasurementSet, Plottable
 
+from .analysis import Sampler, SamplerResult
 from .formatter import Formatter
 from .image import Image
 
@@ -9,7 +12,8 @@ from .photometry import Photometry
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
 from .transient import Transient
-from .analysis import SamplerResult, Sampler
+
+np.seterr(divide="ignore", invalid="ignore")
 
 __all__ = [
     "Base",

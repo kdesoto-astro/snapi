@@ -3,6 +3,7 @@ from typing import Any, List, Mapping
 
 import astropy.units as u
 import numpy as np
+import pandas as pd
 from antares_client.models import Locus  # pylint: disable=import-error
 from antares_client.search import get_by_ztf_object_id, search  # pylint: disable=import-error
 from astropy.coordinates import SkyCoord
@@ -70,32 +71,36 @@ class ANTARESQueryAgent(QueryAgent):
         except RuntimeError:
             return []
 
-    def _locus_helper(self, locus: Locus) -> tuple[float, float, set[LightCurve]]:
-        try: # TODO: better fix for this
+    def _locus_helper(self, locus: Locus) -> tuple[float, float, list[LightCurve]]:
+        try:  # TODO: better fix for this
             time_series = locus.timeseries[self._ts_cols]
-        except KeyError: # sometimes zeropoint isn't there
+        except KeyError:  # sometimes zeropoint isn't there
             time_series = locus.timeseries[self._ts_cols[:-1]]
-            time_series['ztf_magzpsci'] = np.nan
-            
+            time_series["ztf_magzpsci"] = np.nan
+
         for col in self._ts_cols:
             if isinstance(time_series[col], MaskedColumn):
                 time_series[col] = time_series[col].filled(np.nan)
 
-        time_series["time"] = Time(time_series["ant_mjd"], format="mjd", scale="utc")
+        times = Time(time_series["ant_mjd"], format="mjd", scale="utc")
         time_series.rename_column("ztf_magpsf", "mag")
         time_series.rename_column("ztf_sigmapsf", "mag_err")
-        time_series.rename_column("ztf_magzpsci", "zpt")
+        # time_series.rename_column("ztf_magzpsci", "zpt")
+        time_series["zpt"] = 23.90  # bandaid to auto-calibrate
 
         bands = time_series["ztf_fid"]
-        ra = np.nanmean(time_series["ant_ra"])
-        dec = np.nanmean(time_series["ant_dec"])
+        ra = float(np.nanmean(time_series["ant_ra"]))
+        dec = float(np.nanmean(time_series["ant_dec"]))
 
         # handle non-detections by setting nan mags to maglim
         time_series["non_detections"] = np.isnan(time_series["mag"])
         antlims = time_series[time_series["non_detections"]]["ant_maglim"]
         time_series["mag"][time_series["non_detections"]] = antlims
-        time_series.remove_columns(["ant_ra", "ant_dec", "ztf_fid", "ant_mjd", "ant_maglim"])
-        lcs = set()
+        time_series.remove_columns(["ant_mjd", "ant_ra", "ant_dec", "ztf_fid", "ant_mjd", "ant_maglim"])
+
+        df = pd.DataFrame(time_series.to_pandas(), index=pd.DatetimeIndex(times.to_datetime()))
+
+        lcs = []
         for b in np.unique(bands):
             mask = bands == b
             filt = Filter(
@@ -103,8 +108,8 @@ class ANTARESQueryAgent(QueryAgent):
                 band=self._int_to_band[b],
                 center=np.nan * u.AA,  # pylint: disable=no-member
             )
-            lc = LightCurve(time_series[mask], filt=filt)
-            lcs.add(lc)
+            lc = LightCurve(df[mask], filt=filt)
+            lcs.append(lc)
 
         return ra, dec, lcs
 

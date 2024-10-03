@@ -28,6 +28,7 @@ dependencies = [
     'numpy',
     'pandas',
     'pandas-stubs',
+    'pytables',
     'pyts',
     'types-requests',
     'requests'
