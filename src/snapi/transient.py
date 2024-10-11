@@ -146,10 +146,10 @@ class Transient(Base):
             f.attrs["internal_names"] = list(self.internal_names)
 
     @classmethod
-    def load(cls: Type[TransientT], filename: str) -> TransientT:
+    def load(cls: Type[TransientT], filename: str, archival: bool = False) -> TransientT:
         """Load transient object from HDF5 file."""
+        photometry: Photometry = Photometry.load(filename, path="photometry", archival=archival)
         with h5py.File(filename, "r") as f:
-            photometry: Photometry = Photometry.load(filename, path="photometry")
             iid = f.attrs.get("id")
             ra = f.attrs.get("ra")
             if ra is not None:

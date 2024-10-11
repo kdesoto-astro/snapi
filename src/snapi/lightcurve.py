@@ -10,6 +10,7 @@ import numba
 import numpy as np
 import pandas as pd
 from astropy.cosmology import Planck15  # pylint: disable=no-name-in-module
+from astropy.io.misc import hdf5
 from astropy.time import Time
 from astropy.timeseries import LombScargle
 from matplotlib.axes import Axes
@@ -178,8 +179,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         if isinstance(times, pd.DataFrame):
             df = times
             if "time" in df.columns:
-                astropy_times = Time(df["time"], format="mjd")
-                astropy_dt = astropy_times.to_datetime()
+                astropy_dt = Time(df["time"], format="mjd").to_datetime()
                 # convert to DateTimeIndex
                 df = df.set_index(pd.DatetimeIndex(astropy_dt))
             elif "phase" in df.columns:
@@ -195,6 +195,8 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
             if "non_detections" not in df.columns:
                 df["non_detections"] = np.zeros(len(df.index), dtype=bool)
+            else:
+                df["non_detections"] = df["non_detections"].astype(bool)
 
             self._ts = df.loc[:, [*self._ts_cols, "non_detections"]].copy()
 
@@ -234,9 +236,13 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         for col in self._ts_cols:
             self._ts[col] = self._ts[col].astype(np.float64)
 
+        self._ts.index.name = "time"
         self._rng = np.random.default_rng()
         self._sort()  # sort by time
         self._complete()  # fills in missing or inconsistent values
+
+        self._image_time_bins = np.array([0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 10_000])
+        self._image_flux_bins = np.array([-1000, -2, -1, -0.5, -0.2, -0.1, 0, 0.1, 0.2, 0.5, 1, 2, 1000])
 
     def _complete(self, force_update_mags: bool = False, force_update_fluxes: bool = False) -> None:
         """Given zeropoints, fills in missing apparent
@@ -280,11 +286,16 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         self._ts.sort_index()
 
     @property
+    def is_phased(self) -> bool:
+        """Whether LC is phased or unphased."""
+        return self._phased
+
+    @property
     def _mjd(self) -> NDArray[np.float64]:
         """Convert time (index) column to MJDs, in float."""
         if self._phased:
             return self._ts.index.total_seconds().to_numpy() / (24 * 3600)  # type: ignore
-        astropy_time = Time(self._ts.index.values)  # Convert to astropy Time
+        astropy_time = Time(self._ts.index)  # Convert to astropy Time
         return astropy_time.mjd  # type: ignore
 
     def _convert_to_datetime(self, mjds: NDArray[np.float64]) -> Any:
@@ -455,6 +466,16 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         return self._ts[~self.upper_limit_mask].copy()  # pylint: disable=invalid-unary-operand-type
 
     @property
+    def full_time_series(self) -> pd.DataFrame:
+        """Return all observations (detections + nondetections) with extra columns
+        for filter information. Used in photometry dataframe generation."""
+        ts_copy = self._ts.copy()
+        ts_copy["filters"] = str(self._filter)
+        ts_copy["filt_centers"] = self._filter.center.value if self._filter else None
+        ts_copy["filt_widths"] = self._filter.width.value if (self._filter and self._filter.width) else None
+        return ts_copy
+
+    @property
     def peak(self) -> Any:
         """The brightest observation in light curve.
         Return as dictionary.
@@ -468,7 +489,8 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         if self._phased:
             peak_dict["time"] = idx.days  # type: ignore
         else:
-            peak_dict["time"] = idx.mjd  # type: ignore
+            astropy_time = Time(idx)  # Convert to astropy Time
+            peak_dict["time"] = astropy_time.mjd
         return peak_dict
 
     def phase(
@@ -802,7 +824,8 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             avg_fluxes = calc_all_deltas(series, use_sum=True) / 2.0
             dff = delta_fluxes / avg_fluxes
             vals_concat = [
-                np.histogram2d(delta_times[i], dff[i])[0] for i in range(len(dff))
+                np.histogram2d(dff[i], delta_times[i], bins=[self._image_flux_bins, self._image_time_bins])[0]
+                for i in range(len(dff))
             ]  # TODO: set bins in future
         elif method in ["gaf", "mtf", "recurrence"]:
             if method == "gaf":  # Gramian angular field
@@ -817,7 +840,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         else:
             raise NotImplementedError("Imaging method must be one of: 'gaf', 'mtf', 'recurrence'")
 
-        return [Image(vc) for vc in vals_concat]
+        return [Image(vc) for vc in vals_concat]  # type: ignore
 
     def save(self, file_name: str, path: Optional[str] = None, append: bool = False) -> None:
         """Save LightCurve object as an HDF5 file.
@@ -847,19 +870,45 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
                     store.get_storer(path).attrs.width = self._filter.width.value  # type: ignore
 
     @classmethod
-    def load(cls: Type[LightT], file_name: str, path: Optional[str] = None) -> LightT:
+    def load(
+        cls: Type[LightT],
+        file_name: str,
+        path: Optional[str] = None,
+        archival: bool = False,
+    ) -> LightT:
         """Load LightCurve from saved HDF5 table. Automatically
         extracts feature information.
         """
         if path is None:
             paths = list_datasets(file_name)
-            top_level_paths = np.unique([p.split("/")[0] for p in paths])
-            if len(top_level_paths) > 1:
+            if len(paths) > 1:
                 raise ValueError("Multiple datasets found in file. Please specify path.")
-            path = top_level_paths[0]
+            path = paths[0]
+
+        if archival:
+            ts_astropy = hdf5.read_table_hdf5(file_name, path=path)
+            time_series = ts_astropy.to_pandas()
+            time_series = time_series.set_index(time_series["time"])
+            time_series = time_series.drop(columns="time")
+            if "instrument" in ts_astropy.meta:
+                if "width" in ts_astropy.meta:
+                    extracted_filter = Filter(
+                        ts_astropy.meta["instrument"],
+                        ts_astropy.meta["band"],
+                        ts_astropy.meta["center"] * u.AA,  # pylint: disable=no-member
+                        ts_astropy.meta["width"] * u.AA,  # pylint: disable=no-member,
+                    )
+                else:
+                    extracted_filter = Filter(
+                        ts_astropy.meta["instrument"],
+                        ts_astropy.meta["band"],
+                        ts_astropy.meta["center"] * u.AA,  # pylint: disable=no-member
+                    )
+                return cls(time_series, filt=extracted_filter)
+            return cls(time_series)
 
         with pd.HDFStore(file_name) as store:
-            time_series = store[path]  # Load the DataFram
+            time_series = store[path]  # Load the DataFrame
             # Retrieve attributes
             attrs = store.get_storer(path).attrs  # type: ignore
             if "instrument" in attrs.__dict__:

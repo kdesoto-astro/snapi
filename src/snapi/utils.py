@@ -3,9 +3,11 @@ import os
 from typing import Any
 
 import h5py
+import numpy as np
 from astropy.coordinates import SkyCoord
 from dustmaps.config import config as dustmaps_config
 from dustmaps.sfd import SFDQuery
+from numpy.typing import NDArray
 
 dustmaps_config["data_dir"] = os.path.join(
     "/".join(os.path.dirname(__file__).split("/")[:-2]), "data", "dustmaps"
@@ -13,7 +15,7 @@ dustmaps_config["data_dir"] = os.path.join(
 sfd = SFDQuery()
 
 
-def list_datasets(hdf5_file: str) -> list[str]:
+def list_datasets(hdf5_file: str) -> NDArray[np.str_]:
     """List all datasets in an HDF5 file."""
     with h5py.File(hdf5_file, "r") as file:
 
@@ -23,7 +25,9 @@ def list_datasets(hdf5_file: str) -> list[str]:
 
         datasets: list[str] = []
         file.visititems(visitor)
-    return datasets
+
+    datasets_np = np.unique([os.path.dirname(x) for x in datasets])
+    return datasets_np
 
 
 def calc_mwebv(coordinates: SkyCoord) -> float:

@@ -184,7 +184,9 @@ class Sampler(BaseEstimator):  # type: ignore
         self.result = None  # where FitResult will be stored.
 
     def predict(
-        self, X: NDArray[np.object_]
+        self,
+        X: NDArray[np.object_],
+        num_fits: Optional[int] = None,
     ) -> tuple[NDArray[np.float64], NDArray[np.object_]]:  # pylint: disable=invalid-name
         """Returns set of modeled y values from
         set sampled parameters.
@@ -206,7 +208,9 @@ class Sampler(BaseEstimator):  # type: ignore
         placeholder_y = np.zeros(X.shape[0])
         val_x, _ = self._validate_arrs(X, placeholder_y)
 
-        return val_x[:, 0].astype(np.float64), val_x  # Placeholder for actual prediction
+        if num_fits:
+            return val_x[:num_fits, 0].astype(np.float64), val_x  # Placeholder for actual prediction
+        return val_x[:, 0].astype(np.float64), val_x
 
     def score(self, X: NDArray[np.object_], y: NDArray[np.float64], **kwargs: Mapping[str, Any]) -> float:
         """Returns the score of the model.
