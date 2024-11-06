@@ -115,18 +115,18 @@ def update_merged_fluxes(
         else:
             repeat_idx_subset = np.arange(keep_idx, keep_idxs[i + 1])
 
-        nondetect_subset = repeat_idx_subset[~np.isfinite(flux_unc[repeat_idx_subset])]
-        detect_subset = repeat_idx_subset[np.isfinite(flux_unc[repeat_idx_subset])]
+        nondetect_subset = repeat_idx_subset[~np.isfinite(flux_unc.iloc[repeat_idx_subset])]
+        detect_subset = repeat_idx_subset[np.isfinite(flux_unc.iloc[repeat_idx_subset])]
 
         if len(detect_subset) == 0:
-            new_f.append(np.mean(flux[nondetect_subset]))
+            new_f.append(np.mean(flux.iloc[nondetect_subset]))
             new_ferr.append(np.nan)
             new_nondet.append(True)
             continue
 
-        weights = 1.0 / flux_unc[detect_subset] ** 2
-        new_f.append(np.average(flux[detect_subset], weights=weights))
-        new_var = np.var(flux[detect_subset])
+        weights = 1.0 / flux_unc.iloc[detect_subset] ** 2
+        new_f.append(np.average(flux.iloc[detect_subset], weights=weights))
+        new_var = np.var(flux.iloc[detect_subset])
         new_var += 1.0 / np.sum(weights)
         new_ferr.append(np.sqrt(new_var))
         new_nondet.append(False)
@@ -618,13 +618,14 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         """Add rows to existing timeseries."""
         if self._phased:
             new_times = [row["time"] for row in rows]
-            new_index_td = pd.to_timedelta(new_times)
+            new_index_td = pd.to_timedelta(new_times, "D")
             new_df = pd.DataFrame.from_records(rows, index=new_index_td)
         else:
             new_times = [self._convert_to_datetime(row["time"]) for row in rows]
             new_index_dt = pd.DatetimeIndex(new_times)
             new_df = pd.DataFrame.from_records(rows, index=new_index_dt)
-        new_df.drop(columns="time")
+        new_df.drop(columns="time", inplace=True)
+        new_df.index.name = "time"
         self._ts = pd.concat([self._ts, new_df])
         self._sort()
         self._complete()
@@ -643,9 +644,9 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         keep_idxs = np.argwhere(~repeat_idxs)
 
         new_f, new_ferr, new_nondet = update_merged_fluxes(
-            keep_idxs, self._ts["flux"].value, self._ts["flux_unc"].value
+            keep_idxs, self._ts["flux"], self._ts["flux_unc"]
         )
-        self._ts = self._ts[~repeat_idxs]
+        self._ts = self._ts.iloc[~repeat_idxs]
 
         self.fluxes = new_f
         self.flux_errors = new_ferr

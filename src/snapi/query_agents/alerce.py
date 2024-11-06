@@ -106,6 +106,11 @@ class ALeRCEQueryAgent(QueryAgent):
             all_detections.loc[nondetect_mask, "e_mag"] = np.nan
             all_detections.loc[nondetect_mask, "upper_limit"] = True
 
+        all_detections.rename(
+            columns={'mjd': 'time', 'e_mag': 'mag_unc', 'upper_limit': 'non_detections', 'magzpsci': 'zpt'},
+            inplace=True
+        )
+        
         lcs: list[LightCurve] = []
 
         for b in np.unique(all_detections["fid"]):
@@ -116,16 +121,12 @@ class ALeRCEQueryAgent(QueryAgent):
                 width=self._band_widths[b] * u.AA,  # pylint: disable=no-member
             )  # pylint: disable=no-member
             mask = all_detections["fid"] == b
-
             lc = LightCurve(
-                times=Time(all_detections.loc[mask, "mjd"], format="mjd"),
-                mags=all_detections.loc[mask, "mag"],
-                mag_errs=all_detections.loc[mask, "e_mag"],
-                upper_limits=all_detections.loc[mask, "upper_limit"],
-                zpts=all_detections.loc[mask, "magzpsci"],
-                filt=filt,
+                times=all_detections.loc[mask],
+                filt=filt
             )
             lcs.append(lc)
+            
         return lcs, True
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
