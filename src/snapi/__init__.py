@@ -10,7 +10,7 @@ from .image import Image
 from .lightcurve import Filter, LightCurve
 from .photometry import Photometry
 from .spectroscopy import Spectroscopy
-from .spectrum import Spectrum
+from .spectrum import Spectrometer, Spectrum
 from .transient import Transient
 
 np.seterr(divide="ignore", invalid="ignore")
@@ -21,6 +21,7 @@ __all__ = [
     "MeasurementSet",
     "Image",
     "Spectroscopy",
+    "Spectrometer",
     "Photometry",
     "LightCurve",
     "Spectrum",

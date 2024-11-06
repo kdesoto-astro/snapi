@@ -16,11 +16,10 @@ classifiers = [
 dynamic = ["version"]
 requires-python = ">=3.9"
 dependencies = [
-    'alerce',
-    'antares-client',
     'astropy',
-    'astro_ghost',
     'colorcet',
+    'dustmaps',
+    'extinction',
     'george',
     'h5py',
     'matplotlib',
@@ -28,8 +27,8 @@ dependencies = [
     'numpy',
     'pandas',
     'pandas-stubs',
-    #'pytables',
     'pyts',
+    'tables',
     'types-requests',
     'requests'
 ]
@@ -48,6 +47,11 @@ dev = [
     "pylint", # Used for static linting of files
     "pytest",
     "pytest-cov", # Used to report total code coverage
+]
+queries = [
+    "alerce>=1.2.0",
+    "antares_client>=1.8.0",
+    "astro_ghost",
 ]
 
 [build-system]

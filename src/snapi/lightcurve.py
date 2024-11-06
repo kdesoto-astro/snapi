@@ -283,7 +283,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
     def _sort(self) -> None:
         """Sort light curve by time."""
-        self._ts.sort_index()
+        self._ts.sort_index(inplace=True)
 
     @property
     def is_phased(self) -> bool:
@@ -472,7 +472,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         ts_copy = self._ts.copy()
         ts_copy["filters"] = str(self._filter)
         ts_copy["filt_centers"] = self._filter.center.value if self._filter else None
-        ts_copy["filt_widths"] = self._filter.width.value if (self._filter and self._filter.width) else None
+        ts_copy["filt_widths"] = self._filter.width.value if (self._filter and (self._filter.width is not None)) else None
         return ts_copy
 
     @property
@@ -502,9 +502,14 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         """
         if t0 is None:
             t0 = self.peak["time"]
-
-        self._ts.set_index(self._ts.index - np.timedelta64(int(t0 * 24 * 60 * 60 * 1e9), "ns"), inplace=True)
-
+        
+        if self._phased:
+            t0_datetime = np.timedelta64(int(t0 * 24 * 60 * 60 * 1e9), "ns")
+        else:
+            t0_datetime = Time(t0, format="mjd").to_datetime()
+        self._ts.set_index(
+            self._ts.index - t0_datetime, inplace=True
+        )
         if periodic:
             if period is None:
                 period = self.calculate_period()
@@ -563,18 +568,19 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             formatter = Formatter()
 
         times = self._mjd
+
         if self._phased:
             ax.set_xlabel("Phase (days)")
         else:
             ax.set_xlabel("Time (MJD)")
         if mags:
-            vals = self._ts["mag"]
-            val_errs = self._ts["mag_unc"]
+            vals = self._ts["mag"].to_numpy()
+            val_errs = self._ts["mag_unc"].to_numpy()
             ax.set_ylabel("Magnitude")
             ax.invert_yaxis()
         else:
-            vals = self._ts["flux"]
-            val_errs = self._ts["flux_unc"]
+            vals = self._ts["flux"].to_numpy()
+            val_errs = self._ts["flux_unc"].to_numpy()
             ax.set_ylabel("Flux")
 
         ax.errorbar(
@@ -743,28 +749,31 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         Adjusts magnitudes and zeropoints by distance modulus
         and k-corrections.
         """
-        z = redshift * cu.redshift
-        d = z.to(u.Mpc, cu.redshift_distance("Planck15", kind="luminosity"))  # pylint: disable=no-member
+        #z = redshift * cu.redshift
+        #d = z.to(u.Mpc, cu.redshift_distance("Planck15", kind="luminosity"))  # pylint: disable=no-member
 
-        if self._phased:
-            new_times = self.times / (1.0 + redshift)
-            shift_timedelta = pd.to_timedelta(new_times, "D")
+        if not self._phased:
+            #print("PHASING BY DEFAULT")
+            self.phase()
 
-        else:
-            # Calculate the time shift (large value in days)
-            shift_days = (redshift * d / const.c).to(u.d).value  # pylint: disable=no-member
-            new_times_jd1 = 2_400_000.5 / (1.0 + redshift) - shift_days
-            new_times_jd2 = self.times / (1.0 + redshift)
+        new_times = self.times / (1.0 + redshift)
+        shift_timedelta = pd.to_timedelta(new_times, "D")
+        """
+        # Calculate the time shift (large value in days)
+        shift_days = (redshift * d / const.c).to(u.d).value  # pylint: disable=no-member
+        new_times_jd1 = 2_400_000.5 / (1.0 + redshift) - shift_days
+        new_times_jd2 = self.times / (1.0 + redshift)
 
-            shift_timedelta = pd.to_timedelta(new_times_jd1 + new_times_jd2, "D")
-            # Reconstruct the new Time object using jd1 and jd2
+        shift_timedelta = pd.to_timedelta(new_times_jd1 + new_times_jd2, "D")
+        """
+        # Reconstruct the new Time object using jd1 and jd2
         new_ts = self._ts.copy()
         new_ts.set_index(shift_timedelta, inplace=True)
 
         k_corr = 2.5 * np.log10(1.0 + redshift)
         distmod = Planck15.distmod(redshift).value
-        new_ts["mag"] = self._ts["mag"] - distmod + k_corr
-        new_ts["zpt"] = self._ts["zpt"] - distmod + k_corr
+        new_ts["mag"] += (-distmod + k_corr)
+        new_ts["zpt"] += (-distmod + k_corr)
 
         lc_copy = LightCurve(
             times=new_ts,
@@ -880,7 +889,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         extracts feature information.
         """
         if path is None:
-            paths = list_datasets(file_name)
+            paths = list_datasets(file_name, archival)
             if len(paths) > 1:
                 raise ValueError("Multiple datasets found in file. Please specify path.")
             path = paths[0]
