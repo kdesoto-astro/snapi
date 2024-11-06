@@ -9,10 +9,13 @@ from astropy.coordinates import SkyCoord
 from numpy.typing import NDArray
 
 from snapi import Filter, Formatter, LightCurve, Photometry, Spectrometer, Spectroscopy, Spectrum, Transient
-from snapi.query_agents.alerce import ALeRCEQueryAgent
-from snapi.query_agents.antares import ANTARESQueryAgent
-from snapi.query_agents.ghost import GHOSTQueryAgent
-from snapi.query_agents.tns import TNSQueryAgent
+from snapi.query_agents import (
+    ALeRCEQueryAgent,
+    ANTARESQueryAgent,
+    ATLASQueryAgent,
+    GHOSTQueryAgent,
+    TNSQueryAgent,
+)
 
 
 @pytest.fixture(scope="class")
@@ -52,6 +55,12 @@ def antares_agent() -> ANTARESQueryAgent:
 def ghost_agent() -> GHOSTQueryAgent:
     """GHOST query agent fixture."""
     return GHOSTQueryAgent()
+
+
+@pytest.fixture(scope="class")
+def atlas_agent() -> ATLASQueryAgent:
+    """ATLAS query agent fixture."""
+    return ATLASQueryAgent()
 
 
 @pytest.fixture(scope="class")
@@ -245,8 +254,13 @@ class Helpers:  # pylint: disable=too-few-public-methods
     """Helper functions for test cases."""
 
     @staticmethod
-    def assert_query_result(
-        query_result: Any, iid: str, ra: float, dec: float, z: float, phot_spec: bool = True
+    def assert_query_result(  # pylint: disable=too-many-positional-arguments
+        query_result: Any,
+        iid: str,
+        ra: float,
+        dec: float,
+        z: float,
+        phot_spec: bool = True,
     ) -> None:
         """Assert query result."""
         assert query_result.objname == iid
@@ -275,7 +289,7 @@ def helpers() -> Any:
 
 
 @pytest.fixture(scope="class")
-def lightcurve_class_setup(
+def lightcurve_class_setup(  # pylint: disable=too-many-positional-arguments
     request: pytest.FixtureRequest,
     sample_arrs: dict[str, Any],
     sample_filt: Filter,
@@ -301,7 +315,7 @@ def lightcurve_class_setup(
 
 
 @pytest.fixture(scope="class")
-def spectrum_class_setup(
+def spectrum_class_setup(  # pylint: disable=too-many-positional-arguments
     request: pytest.FixtureRequest,
     test_spectrum_arrs: dict[str, Any],
     test_spectrometer: Spectrometer,
@@ -309,7 +323,7 @@ def spectrum_class_setup(
     test_spectrum1: Spectrum,
     test_spectrum2: Spectrum,
     data_dir: str,
-) -> None:
+) -> None:  # pylint: disable=too-many-positional-arguments
     """Set up attributes for the class."""
     request.cls.sample_arrs = test_spectrum_arrs
     request.cls.spectrometer = test_spectrometer
