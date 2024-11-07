@@ -243,10 +243,11 @@ class Sampler(BaseEstimator):  # type: ignore
         # adjust so max flux = 1.0
         photometry.normalize()
         dets = photometry.detections
+        dets_mjd = dets.index.total_seconds().to_numpy() / (24 * 3600)
         if self._mag_y:
-            x_arr = np.array([dets.index.total_seconds().to_numpy() / (24 * 3600), dets["filters"], dets["mag_unc"]], dtype=object).T
+            x_arr = np.array([dets_mjd, dets["filters"], dets["mag_unc"]], dtype=object).T
         else:
-            x_arr = np.array([dets.index.total_seconds().to_numpy() / (24 * 3600), dets["filters"], dets["flux_unc"]], dtype=object).T
+            x_arr = np.array([dets_mjd, dets["filters"], dets["flux_unc"]], dtype=object).T
 
         y = dets["mag"].to_numpy() if self._mag_y else dets["flux"].to_numpy()
         return x_arr, y
@@ -260,7 +261,6 @@ class Sampler(BaseEstimator):  # type: ignore
             The Photometry object to fit.
         """
         x_phot, y_phot = self._convert_photometry_to_arrs(photometry)
-        print(0)
         self.fit(x_phot, y_phot)
 
     def predict_photometry(

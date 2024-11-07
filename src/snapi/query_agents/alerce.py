@@ -125,6 +125,7 @@ class ALeRCEQueryAgent(QueryAgent):
             mask = all_detections["fid"] == b
             lc = LightCurve(all_detections.loc[mask,:], filt=filt)
             lcs.append(lc)
+            
         return lcs, True
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:

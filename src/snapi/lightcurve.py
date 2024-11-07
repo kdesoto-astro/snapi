@@ -646,7 +646,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         new_f, new_ferr, new_nondet = update_merged_fluxes(
             keep_idxs, self._ts["flux"], self._ts["flux_unc"]
         )
-        self._ts = self._ts[~repeat_idxs]
+        self._ts = self._ts.iloc[~repeat_idxs]
 
         self.fluxes = new_f
         self.flux_errors = new_ferr
