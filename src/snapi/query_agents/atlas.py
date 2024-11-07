@@ -128,7 +128,7 @@ class ATLASQueryAgent(QueryAgent):
                 return None
             result = s.get(result_url, headers=self._headers).text
             dfresult = pd.read_csv(io.StringIO(result.replace("###", "")), delim_whitespace=True)
-
+        
         return dfresult
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
@@ -151,8 +151,8 @@ class ATLASQueryAgent(QueryAgent):
         lc_df = self._query_atlas(ra, dec, min_mjd, max_mjd)
         if lc_df is None:
             return []
-        dflux_zero_mask = lc_df["duJy"] == 0
-        flux_nan_mask = pd.isna(lc_df["uJy"])
+        dflux_zero_mask = lc_df["duJy"] > 0
+        flux_nan_mask = ~pd.isna(lc_df["uJy"])
         lc_df = lc_df.loc[dflux_zero_mask & flux_nan_mask, :]
         lc_df.rename(columns=self._col_renames, inplace=True)
         lc_df["zpt"] = 23.9
@@ -161,6 +161,7 @@ class ATLASQueryAgent(QueryAgent):
         for filt, (c, w) in self._filt_profiles.items():
             single_filt_df = lc_df.loc[lc_df["F"] == filt, :]
             snapi_filt = Filter(instrument="ATLAS", band=filt, center=c, width=w)  # c=cyan, o=orange
+            print(single_filt_df)
             lcs.append(LightCurve(single_filt_df, filt=snapi_filt))
         return lcs
 
