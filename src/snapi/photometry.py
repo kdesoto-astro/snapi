@@ -415,9 +415,6 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         if not isinstance(other, self.__class__):
             return False
 
-        print(self.detections)
-        print(other.detections)
-
         return self.detections.equals(other.detections) & (
             self.non_detections.equals(other.non_detections)
         )  # order of LCs irrelevant
@@ -430,22 +427,25 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         max_spacing: float,
         filt_to_int: dict[str, int],
         nfilts: int,
+        max_n: int=64
     ) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Helper function for dense_array method."""
-        gaussian_process = generate_gp(gp_vals, gp_errs, stacked_data)
-
         keep_idxs = np.where(np.abs(np.diff(self.times)) > max_spacing)[0]  # [1,]
         keep_idxs = np.insert(keep_idxs + 1, 0, 0)  # [0,2]
         # simple case: ((time1, filt1), (time1, filt2), (time2, filt1))
         # here, we want keep_idxs to be [0,2]
         # idx_map is [0, 0, 1]
-
-        dense_times = self.times[keep_idxs]
-
         # map reduced indices to original indices
         idx_map = np.zeros(len(self.times), dtype=bool)
         idx_map[keep_idxs] = True  # [True, False, True]
         idx_map = np.cumsum(idx_map) - 1  # [0, 0, 1]
+        
+        gp_vals_keep = gp_vals[idx_map < max_n]
+        gp_errs_keep = gp_errs[idx_map < max_n]
+        stacked_data_keep = stacked_data[idx_map < max_n]
+        dense_times = self.times[keep_idxs][:max_n]
+        
+        gaussian_process = generate_gp(gp_vals_keep, gp_errs_keep, stacked_data_keep)
 
         x_pred = np.zeros((len(dense_times) * nfilts, 2))
 
@@ -453,18 +453,18 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             x_pred[j::nfilts, 0] = dense_times
             x_pred[j::nfilts, 1] = j
 
-        pred, pred_var = gaussian_process.predict(gp_vals, x_pred, return_var=True)
+        pred, pred_var = gaussian_process.predict(gp_vals_keep, x_pred, return_var=True)
 
-        dense_arr = np.zeros((len(dense_times), nfilts * 5 + 1), dtype=np.float64)
-        dense_arr[:, 0] = dense_times
-        dense_arr[:, 1 + 2 * nfilts : 1 + 3 * nfilts] = 1  # interpolated mask
+        dense_arr = np.zeros((nfilts, len(dense_times), 6), dtype=np.float64)
+        dense_arr[:, :, 0] = dense_times
+        dense_arr[:, :, 3] = 1  # interpolated mask
 
         for filt in np.unique(self.filters):
             filt_int = filt_to_int[filt]
-            dense_arr[:, 1 + filt_int] = pred[x_pred[:, 1] == filt_int]
-            dense_arr[:, 1 + nfilts + filt_int] = np.sqrt(pred_var[x_pred[:, 1] == filt_int])
+            dense_arr[filt_int, :, 1] = pred[x_pred[:, 1] == filt_int]
+            dense_arr[filt_int, :, 2] = np.sqrt(pred_var[x_pred[:, 1] == filt_int])
 
-        return dense_arr, idx_map
+        return dense_arr, idx_map, idx_map >= max_n
 
     def _generate_gp_vals_and_errs(
         self,
@@ -528,31 +528,33 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         nfilts = len(self._lightcurves)
         stacked_data = np.vstack([self.times, filts_as_ints]).T
 
-        dense_arr, idx_map = self._dense_lc_helper(
+        dense_arr, idx_map, ignore_m = self._dense_lc_helper(
             gp_vals, gp_errs, stacked_data, max_spacing, filt_to_int, nfilts
         )
 
-        for filt in np.unique(self.filters):
+        for filt in np.unique(self.filters[~ignore_m]):
             filt_int = filt_to_int[filt]
             filt_mask = (self.filters == filt) & (~self.upper_limit_mask)
-            sub_series = self._ts[filt_mask]
-            sub_idx_map = idx_map[filt_mask]
+            sub_series = self._ts[filt_mask & ~ignore_m]
+            sub_idx_map = idx_map[filt_mask & ~ignore_m]
 
             # fill in true values
-            dense_arr[sub_idx_map, 1 + filt_int] = gp_vals[filt_mask]
-            dense_arr[sub_idx_map, 1 + nfilts + filt_int] = gp_errs[filt_mask]
-            dense_arr[sub_idx_map, 1 + 2 * nfilts + filt_int] = 0
-            dense_arr[:, 1 + 3 * nfilts + filt_int] = sub_series["filt_centers"][0]
-            dense_arr[:, 1 + 4 * nfilts + filt_int] = sub_series["filt_widths"][0]
-
-            if not use_fluxes:
-                dense_arr[:, 1 + filt_int] += np.nanmax(self._ts["mag"][~self.upper_limit_mask])
-                dense_arr[:, 1 + filt_int] += 3.0 * np.nanmax(self._ts["mag_unc"][~self.upper_limit_mask])
-
+            dense_arr[filt_int, sub_idx_map, 1] = gp_vals[filt_mask & ~ignore_m]
+            dense_arr[filt_int, sub_idx_map, 2] = gp_errs[filt_mask & ~ignore_m]
+            dense_arr[filt_int, sub_idx_map, 3] = 0
+            dense_arr[filt_int, :, 4] = sub_series["filt_centers"][0]
+            dense_arr[filt_int, :, 5] = sub_series["filt_widths"][0]
+            
             # fix broken errors - usually if no points in that band
-            mask = dense_arr[:, 1 + nfilts + filt_int] <= 0.0
-            dense_arr[mask, 1 + nfilts + filt_int] = error_mask
-            dense_arr[mask, 1 + 2 * nfilts + filt_int] = 1
+            mask = dense_arr[filt_int, :, 2] <= 0.0
+            dense_arr[filt_int, mask, 2] = error_mask
+            dense_arr[filt_int, mask, 3] = 1
+
+        if not use_fluxes: # TODO: why is this here again?
+            dense_arr[:, :, 1] += np.nanmax(self._ts["mag"][~self.upper_limit_mask])
+            dense_arr[:, :, 1] += 3.0 * np.nanmax(self._ts["mag_unc"][~self.upper_limit_mask])
+
+        
 
         # readd nan rows at end back to time series
         self._ts = pd.concat([self._ts, masked_rows])
@@ -564,6 +566,8 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """Return new Photometry with absolute magnitudes.
         Shifts zeropoints accordingly.
         """
+        if not self._phased:
+            self.phase() # first have to phase
         new_lcs = []
         for lc in self._lightcurves:
             new_lcs.append(lc.absolute(redshift))
@@ -605,7 +609,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """
         lcs = []
         # get all paths that start with path
-        lc_path_list = [lc_path for lc_path in list_datasets(filename) if lc_path.startswith(path)]
+        lc_path_list = [lc_path for lc_path in list_datasets(filename, archival) if lc_path.startswith(path)]
         for lc_path in lc_path_list:
             lc = LightCurve.load(filename, path=lc_path, archival=archival)
             lcs.append(lc)

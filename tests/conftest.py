@@ -8,11 +8,17 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from numpy.typing import NDArray
 
-from snapi import Filter, Formatter, LightCurve, Photometry, Transient
+from snapi import Filter, Formatter, LightCurve, Photometry, Spectrometer, Spectroscopy, Spectrum, Transient
 from snapi.query_agents.alerce import ALeRCEQueryAgent
 from snapi.query_agents.antares import ANTARESQueryAgent
 from snapi.query_agents.ghost import GHOSTQueryAgent
 from snapi.query_agents.tns import TNSQueryAgent
+
+
+@pytest.fixture(scope="class")
+def test_rng() -> np.random.Generator:
+    """numpy rng for all test fixtures."""
+    return np.random.default_rng()
 
 
 @pytest.fixture(scope="class")
@@ -142,6 +148,72 @@ def test_lightcurve2() -> LightCurve:
 
 
 @pytest.fixture(scope="class")
+def test_spectrum_arrs(test_rng: np.random.Generator) -> dict[str, NDArray[np.float64]]:
+    """Arrays to make test spectrum objects."""
+    return {"flux": 10.0 * test_rng.normal(size=10), "errors": np.abs(test_rng.normal(size=10))}
+
+
+@pytest.fixture(scope="class")
+def test_spectrum_arrs2(test_rng: np.random.Generator) -> dict[str, NDArray[np.float64]]:
+    """Arrays to make test spectrum objects."""
+    return {"flux": 5.0 * test_rng.normal(size=10) + 30.0, "errors": np.abs(test_rng.normal(size=10)) / 2.0}
+
+
+@pytest.fixture(scope="class")
+def test_spectrometer(test_spectrum_arrs: dict[str, NDArray[np.float64]]) -> Spectrometer:
+    """Test spectrometer fixture."""
+    return Spectrometer(
+        instrument="test_spectrometer",
+        wavelength_start=4000.0 * u.AA,  # pylint: disable=no-member
+        wavelength_delta=1.0 * u.AA,  # pylint: disable=no-member
+        num_channels=len(test_spectrum_arrs["flux"]),
+    )
+
+
+@pytest.fixture(scope="class")
+def test_spectrometer2(test_spectrum_arrs2: dict[str, NDArray[np.float64]]) -> Spectrometer:
+    """Test spectrometer fixture."""
+    return Spectrometer(
+        instrument="test_spectrometer2",
+        wavelength_start=5000.0 * u.AA,  # pylint: disable=no-member
+        wavelength_delta=2.0 * u.AA,  # pylint: disable=no-member
+        num_channels=len(test_spectrum_arrs2["flux"]),
+    )
+
+
+@pytest.fixture(scope="class")
+def test_spectrum1(
+    test_spectrum_arrs: dict[str, NDArray[np.float64]], test_spectrometer: Spectrometer
+) -> Spectrum:
+    """Test spectrum fixture."""
+    return Spectrum(
+        time=1.0 * u.day,  # pylint: disable=no-member
+        fluxes=test_spectrum_arrs["flux"],
+        errors=test_spectrum_arrs["errors"],
+        spectrometer=test_spectrometer,
+    )
+
+
+@pytest.fixture(scope="class")
+def test_spectrum2(
+    test_spectrum_arrs2: dict[str, NDArray[np.float64]], test_spectrometer2: Spectrometer
+) -> Spectrum:
+    """Test spectrum fixture."""
+    return Spectrum(
+        time=1.0 * u.day,  # pylint: disable=no-member
+        fluxes=test_spectrum_arrs2["flux"],
+        errors=test_spectrum_arrs2["errors"],
+        spectrometer=test_spectrometer2,
+    )
+
+
+@pytest.fixture(scope="class")
+def test_spectroscopy(test_spectrum1: Spectrum, test_spectrum2: Spectrum) -> Spectroscopy:
+    """Test spectroscopy fixture."""
+    return Spectroscopy([test_spectrum1, test_spectrum2])
+
+
+@pytest.fixture(scope="class")
 def test_photometry(
     test_lightcurve1: LightCurve, test_lightcurve2: LightCurve
 ) -> Photometry:  # pylint: disable=redefined-outer-name
@@ -226,3 +298,23 @@ def lightcurve_class_setup(
     request.cls.save_fn = os.path.join(data_dir, "test_lc_save.h5")
     request.cls.load_fn = os.path.join(data_dir, "test_lc_load.h5")
     request.cls.fill_dict = fill_dict
+
+
+@pytest.fixture(scope="class")
+def spectrum_class_setup(
+    request: pytest.FixtureRequest,
+    test_spectrum_arrs: dict[str, Any],
+    test_spectrometer: Spectrometer,
+    test_spectrometer2: Spectrometer,
+    test_spectrum1: Spectrum,
+    test_spectrum2: Spectrum,
+    data_dir: str,
+) -> None:
+    """Set up attributes for the class."""
+    request.cls.sample_arrs = test_spectrum_arrs
+    request.cls.spectrometer = test_spectrometer
+    request.cls.spectrometer2 = test_spectrometer2
+    request.cls.spec = test_spectrum1
+    request.cls.spec = test_spectrum2
+    request.cls.save_fn = os.path.join(data_dir, "test_spectrum_save.h5")
+    request.cls.load_fn = os.path.join(data_dir, "test_spectrum_load.h5")

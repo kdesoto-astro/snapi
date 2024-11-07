@@ -34,12 +34,12 @@ class Spectroscopy(MeasurementSet, Plottable):
         """Return list of spectra."""
         return copy.deepcopy(self._spectra)
 
-    def grid(self, normalize: bool = False) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+    def grid(self, normalize: bool = False) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Return common wavelength grid and flux grid for all spectra.
         If normalize is True, normalize fluxes for each spectrum between 0 and 1."""
         wv_arr = [spec.wavelengths for spec in self._spectra]
         all_wvs = np.unique(np.concatenate(wv_arr))
-        interp_fluxes = np.zeros((len(self._spectra), len(all_wvs)), dtype=np.float32)
+        interp_fluxes = np.zeros((len(self._spectra), len(all_wvs)), dtype=np.float64)
         for i, spec in enumerate(self._spectra):
             interp_fluxes[i] = np.interp(all_wvs, spec.wavelengths, spec.fluxes)
             if normalize:

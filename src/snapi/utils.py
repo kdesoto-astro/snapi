@@ -15,7 +15,7 @@ dustmaps_config["data_dir"] = os.path.join(
 sfd = SFDQuery()
 
 
-def list_datasets(hdf5_file: str) -> NDArray[np.str_]:
+def list_datasets(hdf5_file: str, archival: bool=False) -> NDArray[np.str_]:
     """List all datasets in an HDF5 file."""
     with h5py.File(hdf5_file, "r") as file:
 
@@ -26,7 +26,10 @@ def list_datasets(hdf5_file: str) -> NDArray[np.str_]:
         datasets: list[str] = []
         file.visititems(visitor)
 
-    datasets_np = np.unique([os.path.dirname(x) for x in datasets])
+    if archival:
+        datasets_np = np.array([x for x in datasets if x.split(".")[-1] != "__table_column_meta__"])
+    else:
+        datasets_np = np.unique([os.path.dirname(x) for x in datasets])
     return datasets_np
 
 

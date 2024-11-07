@@ -44,7 +44,12 @@ class Transient(Base):
             self.photometry = Photometry()
         else:
             self.photometry = photometry
-        self.spectroscopy = spectroscopy
+        
+        if spectroscopy is None:
+            self.spectroscopy = Spectroscopy()
+        else:
+            self.spectroscopy = spectroscopy
+            
         if internal_names is None:
             self.internal_names = set()
         else:

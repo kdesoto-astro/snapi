@@ -1,8 +1,10 @@
 """Class for a single spectrum."""
 import copy
-from typing import Iterable, Optional, Sequence, Union
+from typing import Any, Iterable, Optional, Sequence, Union
 
+import astropy.units as u
 import numpy as np
+from astropy.time import Time
 from astropy.units import Quantity
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -11,7 +13,7 @@ from .base_classes import Observer, Plottable
 from .constants import ION_LINES
 from .formatter import Formatter
 
-SequenceNumpy = Union[NDArray[np.float32], Sequence[float]]
+SequenceNumpy = Union[NDArray[np.float64], Sequence[float]]
 
 
 class Spectrometer(Observer):
@@ -22,8 +24,8 @@ class Spectrometer(Observer):
     def __init__(
         self,
         instrument: str,
-        wavelength_start: float,
-        wavelength_delta: float,
+        wavelength_start: Quantity,
+        wavelength_delta: Quantity,
         num_channels: int,
     ) -> None:
         """Initialize a Spectrometer object."""
@@ -33,13 +35,14 @@ class Spectrometer(Observer):
         self._wv_num = num_channels
 
     @property
-    def wavelengths(self) -> NDArray[np.float32]:
+    def wavelengths(self) -> NDArray[np.float64]:
         """Return wavelengths."""
         return np.arange(
-            self._wv_start,
-            self._wv_start + self._wv_num * self._wv_delta,
-            self._wv_delta,
-        ).astype(np.float32)
+            self._wv_start.to(u.AA).value,  # pylint: disable=no-member
+            self._wv_start.to(u.AA).value  # pylint: disable=no-member
+            + self._wv_num * self._wv_delta.to(u.AA).value,  # pylint: disable=no-member
+            self._wv_delta.to(u.AA).value,  # pylint: disable=no-member
+        )
 
 
 class Spectrum(Plottable):
@@ -49,7 +52,7 @@ class Spectrum(Plottable):
 
     def __init__(
         self,
-        time: Optional[Quantity] = None,
+        time: Optional[Any] = None,
         fluxes: Optional[SequenceNumpy] = None,
         errors: Optional[SequenceNumpy] = None,
         spectrometer: Optional[Spectrometer] = None,
@@ -71,28 +74,34 @@ class Spectrum(Plottable):
             self._wavelengths = spectrometer.wavelengths
         else:
             max_len = max(len(fluxes), len(errors))
-            self._wavelengths = np.arange(max_len, dtype=np.float32)
+            self._wavelengths = np.arange(max_len, dtype=np.float64)
 
-        self._fluxes = np.pad(fluxes, (0, max_len - len(fluxes)), constant_values=np.nan).astype(np.float32)
-        self._errors = np.pad(errors, (0, max_len - len(errors)), constant_values=np.nan).astype(np.float32)
+        self._fluxes = np.pad(fluxes, (0, max_len - len(fluxes)), constant_values=np.nan).astype(np.float64)
+        self._errors = np.pad(errors, (0, max_len - len(errors)), constant_values=np.nan).astype(np.float64)
 
     @property
     def time(self) -> Optional[float]:
         """Return time of observation."""
-        return self._time.mjd if self._time is not None else None
+        if self._time is None:
+            return None
+        if isinstance(self._time, Time):
+            return self._time.mjd
+        if isinstance(self._time, Quantity):
+            return self._time.to(u.d).value  # pylint: disable=no-member
+        return self._time
 
     @property
-    def fluxes(self) -> NDArray[np.float32]:
+    def fluxes(self) -> NDArray[np.float64]:
         """Return fluxes."""
         return self._fluxes.copy()
 
     @property
-    def errors(self) -> NDArray[np.float32]:
+    def errors(self) -> NDArray[np.float64]:
         """Return errors."""
         return self._errors.copy()
 
     @property
-    def wavelengths(self) -> NDArray[np.float32]:
+    def wavelengths(self) -> NDArray[np.float64]:
         """Return wavelengths."""
         return self._wavelengths.copy()
 
@@ -102,12 +111,12 @@ class Spectrum(Plottable):
         return copy.deepcopy(self._spectrometer)
 
     @property
-    def normalized_fluxes(self) -> NDArray[np.float32]:
+    def normalized_fluxes(self) -> NDArray[np.float64]:
         """Return normalized fluxes."""
         return (self._fluxes - np.min(self._fluxes)) / np.ptp(self._fluxes)
 
     @property
-    def normalized_errors(self) -> NDArray[np.float32]:
+    def normalized_errors(self) -> NDArray[np.float64]:
         """Return normalized errors."""
         return self._errors / np.ptp(self._fluxes)
 
@@ -133,7 +142,7 @@ class Spectrum(Plottable):
                     self.normalized_fluxes + offset,
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
-                    label=rf"$t={round(self._time.mjd,2)}$",
+                    label=rf"$t={round(self.time,2)}$" if self.time else r"$t=$None",
                 )
             else:
                 ax.plot(
@@ -144,7 +153,7 @@ class Spectrum(Plottable):
                 )
             if self._time is not None and annotate:
                 ax.annotate(
-                    rf"$t={round(self._time.mjd, 2)}$",
+                    rf"$t={round(self.time, 2)}$" if self.time else r"$t=$None",
                     xy=(ax.get_xlim()[1], self.normalized_fluxes[-1] + offset),
                     xytext=(10, 0),
                     textcoords="offset points",
@@ -165,7 +174,7 @@ class Spectrum(Plottable):
                 ax.plot(
                     self._wavelengths,
                     self._fluxes + offset,
-                    label=rf"$t={round(self._time.mjd,2)}$",
+                    label=rf"$t={round(self.time,2)}$" if self.time else r"$t=$None",
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
                 )
@@ -178,7 +187,7 @@ class Spectrum(Plottable):
                 )
             if self._time is not None and annotate:
                 ax.annotate(
-                    rf"$t={round(self._time.mjd,2)}$",
+                    rf"$t={round(self.time,2)}$" if self.time else r"$t=$None",
                     xy=(ax.get_xlim()[1], self._fluxes[-1] + offset),
                     xytext=(10, 0),
                     textcoords="offset points",
@@ -191,7 +200,7 @@ class Spectrum(Plottable):
                 self._fluxes - self._errors + offset,
                 self._fluxes + self._errors + offset,
                 alpha=0.5,
-                c=formatter.face_color,
+                color=formatter.face_color,
             )
         if not overlay_lines:
             return ax

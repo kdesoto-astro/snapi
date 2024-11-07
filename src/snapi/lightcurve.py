@@ -115,18 +115,18 @@ def update_merged_fluxes(
         else:
             repeat_idx_subset = np.arange(keep_idx, keep_idxs[i + 1])
 
-        nondetect_subset = repeat_idx_subset[~np.isfinite(flux_unc[repeat_idx_subset])]
-        detect_subset = repeat_idx_subset[np.isfinite(flux_unc[repeat_idx_subset])]
+        nondetect_subset = repeat_idx_subset[~np.isfinite(flux_unc.iloc[repeat_idx_subset])]
+        detect_subset = repeat_idx_subset[np.isfinite(flux_unc.iloc[repeat_idx_subset])]
 
         if len(detect_subset) == 0:
-            new_f.append(np.mean(flux[nondetect_subset]))
+            new_f.append(np.mean(flux.iloc[nondetect_subset]))
             new_ferr.append(np.nan)
             new_nondet.append(True)
             continue
 
-        weights = 1.0 / flux_unc[detect_subset] ** 2
-        new_f.append(np.average(flux[detect_subset], weights=weights))
-        new_var = np.var(flux[detect_subset])
+        weights = 1.0 / flux_unc.iloc[detect_subset] ** 2
+        new_f.append(np.average(flux.iloc[detect_subset], weights=weights))
+        new_var = np.var(flux.iloc[detect_subset])
         new_var += 1.0 / np.sum(weights)
         new_ferr.append(np.sqrt(new_var))
         new_nondet.append(False)
@@ -283,7 +283,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
 
     def _sort(self) -> None:
         """Sort light curve by time."""
-        self._ts.sort_index()
+        self._ts.sort_index(inplace=True)
 
     @property
     def is_phased(self) -> bool:
@@ -472,7 +472,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         ts_copy = self._ts.copy()
         ts_copy["filters"] = str(self._filter)
         ts_copy["filt_centers"] = self._filter.center.value if self._filter else None
-        ts_copy["filt_widths"] = self._filter.width.value if (self._filter and self._filter.width) else None
+        ts_copy["filt_widths"] = self._filter.width.value if (self._filter and (self._filter.width is not None)) else None
         return ts_copy
 
     @property
@@ -502,9 +502,14 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         """
         if t0 is None:
             t0 = self.peak["time"]
-
-        self._ts.set_index(self._ts.index - np.timedelta64(int(t0 * 24 * 60 * 60 * 1e9), "ns"), inplace=True)
-
+        
+        if self._phased:
+            t0_datetime = np.timedelta64(int(t0 * 24 * 60 * 60 * 1e9), "ns")
+        else:
+            t0_datetime = Time(t0, format="mjd").to_datetime()
+        self._ts.set_index(
+            self._ts.index - t0_datetime, inplace=True
+        )
         if periodic:
             if period is None:
                 period = self.calculate_period()
@@ -563,18 +568,19 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
             formatter = Formatter()
 
         times = self._mjd
+
         if self._phased:
             ax.set_xlabel("Phase (days)")
         else:
             ax.set_xlabel("Time (MJD)")
         if mags:
-            vals = self._ts["mag"]
-            val_errs = self._ts["mag_unc"]
+            vals = self._ts["mag"].to_numpy()
+            val_errs = self._ts["mag_unc"].to_numpy()
             ax.set_ylabel("Magnitude")
             ax.invert_yaxis()
         else:
-            vals = self._ts["flux"]
-            val_errs = self._ts["flux_unc"]
+            vals = self._ts["flux"].to_numpy()
+            val_errs = self._ts["flux_unc"].to_numpy()
             ax.set_ylabel("Flux")
 
         ax.errorbar(
@@ -612,13 +618,14 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         """Add rows to existing timeseries."""
         if self._phased:
             new_times = [row["time"] for row in rows]
-            new_index_td = pd.to_timedelta(new_times)
+            new_index_td = pd.to_timedelta(new_times, "D")
             new_df = pd.DataFrame.from_records(rows, index=new_index_td)
         else:
             new_times = [self._convert_to_datetime(row["time"]) for row in rows]
             new_index_dt = pd.DatetimeIndex(new_times)
             new_df = pd.DataFrame.from_records(rows, index=new_index_dt)
-        new_df.drop(columns="time")
+        new_df.drop(columns="time", inplace=True)
+        new_df.index.name = "time"
         self._ts = pd.concat([self._ts, new_df])
         self._sort()
         self._complete()
@@ -637,7 +644,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         keep_idxs = np.argwhere(~repeat_idxs)
 
         new_f, new_ferr, new_nondet = update_merged_fluxes(
-            keep_idxs, self._ts["flux"].value, self._ts["flux_unc"].value
+            keep_idxs, self._ts["flux"], self._ts["flux_unc"]
         )
         self._ts = self._ts[~repeat_idxs]
 
@@ -743,28 +750,31 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         Adjusts magnitudes and zeropoints by distance modulus
         and k-corrections.
         """
-        z = redshift * cu.redshift
-        d = z.to(u.Mpc, cu.redshift_distance("Planck15", kind="luminosity"))  # pylint: disable=no-member
+        #z = redshift * cu.redshift
+        #d = z.to(u.Mpc, cu.redshift_distance("Planck15", kind="luminosity"))  # pylint: disable=no-member
 
-        if self._phased:
-            new_times = self.times / (1.0 + redshift)
-            shift_timedelta = pd.to_timedelta(new_times, "D")
+        if not self._phased:
+            #print("PHASING BY DEFAULT")
+            self.phase()
 
-        else:
-            # Calculate the time shift (large value in days)
-            shift_days = (redshift * d / const.c).to(u.d).value  # pylint: disable=no-member
-            new_times_jd1 = 2_400_000.5 / (1.0 + redshift) - shift_days
-            new_times_jd2 = self.times / (1.0 + redshift)
+        new_times = self.times / (1.0 + redshift)
+        shift_timedelta = pd.to_timedelta(new_times, "D")
+        """
+        # Calculate the time shift (large value in days)
+        shift_days = (redshift * d / const.c).to(u.d).value  # pylint: disable=no-member
+        new_times_jd1 = 2_400_000.5 / (1.0 + redshift) - shift_days
+        new_times_jd2 = self.times / (1.0 + redshift)
 
-            shift_timedelta = pd.to_timedelta(new_times_jd1 + new_times_jd2, "D")
-            # Reconstruct the new Time object using jd1 and jd2
+        shift_timedelta = pd.to_timedelta(new_times_jd1 + new_times_jd2, "D")
+        """
+        # Reconstruct the new Time object using jd1 and jd2
         new_ts = self._ts.copy()
         new_ts.set_index(shift_timedelta, inplace=True)
 
         k_corr = 2.5 * np.log10(1.0 + redshift)
         distmod = Planck15.distmod(redshift).value
-        new_ts["mag"] = self._ts["mag"] - distmod + k_corr
-        new_ts["zpt"] = self._ts["zpt"] - distmod + k_corr
+        new_ts["mag"] += (-distmod + k_corr)
+        new_ts["zpt"] += (-distmod + k_corr)
 
         lc_copy = LightCurve(
             times=new_ts,
@@ -880,7 +890,7 @@ class LightCurve(Plottable):  # pylint: disable=too-many-public-methods
         extracts feature information.
         """
         if path is None:
-            paths = list_datasets(file_name)
+            paths = list_datasets(file_name, archival)
             if len(paths) > 1:
                 raise ValueError("Multiple datasets found in file. Please specify path.")
             path = paths[0]

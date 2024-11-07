@@ -134,7 +134,6 @@ class Sampler(BaseEstimator):  # type: ignore
         self._nparams = 0  # number of parameters in the model
         self._sampler_name = ""  # name of the sampler
         self.result: Optional[SamplerResult] = None
-        print(0)
 
     def _validate_arrs(
         self, X: NDArray[np.object_], y: NDArray[np.float64]
@@ -244,13 +243,12 @@ class Sampler(BaseEstimator):  # type: ignore
         # adjust so max flux = 1.0
         photometry.normalize()
         dets = photometry.detections
-        print(dets.columns)
         if self._mag_y:
-            x_arr = np.array([dets["phased_time"].mjd, dets["filters"], dets["mag_err"]], dtype=object).T
+            x_arr = np.array([dets.index.total_seconds().to_numpy() / (24 * 3600), dets["filters"], dets["mag_unc"]], dtype=object).T
         else:
-            x_arr = np.array([dets["phased_time"].mjd, dets["filters"], dets["flux_err"]], dtype=object).T
+            x_arr = np.array([dets.index.total_seconds().to_numpy() / (24 * 3600), dets["filters"], dets["flux_unc"]], dtype=object).T
 
-        y = dets["mag"].data if self._mag_y else dets["flux"].data
+        y = dets["mag"].to_numpy() if self._mag_y else dets["flux"].to_numpy()
         return x_arr, y
 
     def fit_photometry(self, photometry: Photometry) -> None:
