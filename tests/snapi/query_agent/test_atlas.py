@@ -1,5 +1,6 @@
 """Test cases for ATLAS query functions."""
 from typing import Any
+import pytest
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -7,7 +8,7 @@ from astropy.coordinates import SkyCoord
 from snapi.query_agents import ATLASQueryAgent
 from snapi.transient import Transient
 
-
+@pytest.mark.skip_precommit
 def test_atlas_query_by_coords(
     atlas_agent: ATLASQueryAgent, test_event: dict[str, Any], helpers: Any
 ) -> None:
@@ -27,12 +28,12 @@ def test_atlas_query_by_coords(
         query_result, test_event["ztf_id"], test_event["ra"], test_event["dec"], test_event["redshift"]
     )
 
-
+@pytest.mark.skip_precommit
 def test_atlas_query_by_name(atlas_agent: ATLASQueryAgent, test_event: dict[str, Any]) -> None:
     """Test ALeRCE query by name."""
     assert not atlas_agent.query_by_name(test_event["ztf_id"])[1]
 
-
+@pytest.mark.skip_precommit
 def test_atlas_query_by_transient(
     atlas_agent: ATLASQueryAgent, test_event: dict[str, Any], helpers: Any
 ) -> None:

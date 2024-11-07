@@ -296,7 +296,7 @@ def test_photometry(
 
 
 @pytest.fixture(scope="class")
-def test_transient(test_photometry: Photometry) -> Transient:  # pylint: disable=redefined-outer-name
+def test_transient(test_photometry: Photometry, test_spectroscopy: Spectroscopy) -> Transient:  # pylint: disable=redefined-outer-name
     """Test transient fixture."""
     return Transient(
         iid="test_transient",
@@ -304,6 +304,7 @@ def test_transient(test_photometry: Photometry) -> Transient:  # pylint: disable
         dec=30 * u.deg,  # pylint: disable=no-member
         redshift=0.01,
         internal_names={"transient1", "transient2"},
+        spectroscopy=test_spectroscopy,
         photometry=test_photometry,
     )
 

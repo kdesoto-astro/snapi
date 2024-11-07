@@ -167,7 +167,7 @@ def test_dense_array(test_photometry: Photometry) -> None:
     """Test generation of dense arrays.
     TODO: add to this"""
     dense_arr = test_photometry.dense_array()
-    assert dense_arr.shape == (7, 11)  # num UNIQUE timestamps x (1 + 5*nfilts)
+    assert dense_arr.shape == (2, 7, 6)  # num UNIQUE timestamps x (1 + 5*nfilts)
 
 
 def test_absolute(test_photometry: Photometry) -> None:

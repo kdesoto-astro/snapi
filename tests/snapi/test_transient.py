@@ -22,7 +22,7 @@ class TestTransientInit:
         transient = Transient()
         assert len(transient.photometry) == 0
         assert len(transient.spectroscopy) == 0
-        assert transient.id == ""
+        assert transient.id == str(id(transient))
         assert transient.coordinates is None
         assert transient.redshift is None
         assert transient.spec_class is None
@@ -92,37 +92,47 @@ def test_add_spectrum(test_spectrum1: Spectrum, test_spectrum2: Spectrum) -> Non
 
 def test_len(test_transient: Transient) -> None:
     """Tests __len__ reflects number of LCs + spectra"""
-    assert len(test_transient) == 2
+    assert len(test_transient) == 4
     assert len(Transient()) == 0
 
 
-def test_eq(test_transient: Transient, test_lightcurve1: LightCurve, test_spectrum1: Spectrum) -> None:
+def test_eq(
+        test_transient: Transient,
+        test_lightcurve1: LightCurve,
+        test_lightcurve2: LightCurve,
+        test_spectrum1: Spectrum,
+        test_spectrum2: Spectrum,
+    ) -> None:
     """Tests __eq__ function of photometry."""
     assert copy.deepcopy(test_transient) == test_transient
-    assert (
-        Transient(
-            spectroscopy=Spectroscopy(
-                [
-                    test_spectrum1,
-                ]
-            ),
-            photometry=Photometry(
-                [
-                    test_lightcurve1,
-                ]
-            ),
-        )
-        == test_transient
+    new_transient = Transient(
+        iid='transient1',
+        ra=100 * u.deg,  # pylint: disable=no-member
+        dec=30 * u.deg,  # pylint: disable=no-member
+        redshift=0.01,
+        spectroscopy=Spectroscopy(
+            [ 
+                test_spectrum1,
+                test_spectrum2,
+            ]
+        ),
+        photometry=Photometry(
+            [
+                test_lightcurve2,
+                test_lightcurve1,
+            ]
+        ),
     )
+    assert new_transient == test_transient
 
 
 class TestIngestQueryInfo:
     """Test ingestion of query info in dictionary form."""
 
-    def test_ingest_query_info_empty_transient() -> None:
+    def test_ingest_query_info_empty_transient(self,) -> None:
         """Test ingest_query_info() into an empty Transient object."""
 
-    def test_ingest_query_info_overlap() -> None:
+    def test_ingest_query_info_overlap(self,) -> None:
         """Test ingest_query_info() into a Transient with pre-filled
         fields."""
 
@@ -151,4 +161,5 @@ class TestSaveLoad:
             os.remove(save_fn)  # regenerate it each time
         test_transient.save(save_fn)
         transient_loaded = Transient.load(save_fn)
+
         assert transient_loaded == test_transient
