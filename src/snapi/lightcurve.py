@@ -30,32 +30,58 @@ class Filter(Observer):
 
     def __init__(
         self,
-        instrument: str,
-        band: str,
-        center: u.Quantity,
-        width: Optional[u.Quantity] = None,
+        instrument: str = "",
+        band: str = "",
+        center: Any = np.nan,
+        width: Optional[Any] = None,
     ) -> None:
         super().__init__(instrument)
         self._band = band
+        
+        self._set_center(center)
+        self._set_width(width)
+        self._update()
+        self.meta_attrs = ['_instrument', '_band', '_center', '_width'] # stored as floats assuming u.AA
 
-        if center.unit.physical_type == "frequency":  # convert to wavelength
-            self._center = (
-                center.to(u.Hz, equivalencies=u.spectral()) ** -1 * u.AA  # pylint: disable=no-member
-            )
-        elif center.unit.physical_type == "length":  # convert to wavelength
-            self._center = center.to(u.AA)  # pylint: disable=no-member
+    
+    def _set_center(self, center: Any) -> None:
+        """Checks possible formatting for center and saves accordingly."""
+        if isinstance(center, u.Quantity):
+            if center.unit.physical_type == "length":
+                self._center = center.to(u.AA).value
+            elif center.unit.physical_type == "frequency":  # convert to wavelength
+                self._center = (
+                    center.to(u.Hz, equivalencies=u.spectral()) ** -1 * u.AA  # pylint: disable=no-member
+                ).value
+            else:
+                raise ValueError("center's units must be of type length or frequency")
         else:
-            raise TypeError("center must be a wavelength or frequency quantity!")
-
+            try:
+                self._center = float(center)
+            except:
+                raise ValueError("center must be convertible to a float if without units.")
+            
+    def _set_width(self, width: Any) -> None:
+        """Checks possible formatting for width and saves accordingly."""
         if width is None:
             self._width = width
-        elif width.unit.physical_type == "frequency":  # convert to wavelength
-            self._width = width.to(u.Hz, equivalencies=u.spectral()) ** -1 * u.AA  # pylint: disable=no-member
-        elif width.unit.physical_type == "length":  # convert to wavelength
-            self._width = width.to(u.AA)  # pylint: disable=no-member
+        elif isinstance(width, u.Quantity):
+            if width.unit.physical_type == "frequency":  # convert to wavelength
+                self._width = (width.to(u.Hz, equivalencies=u.spectral()) ** -1 * u.AA).value  # pylint: disable=no-member
+            elif width.unit.physical_type == "length":  # convert to wavelength
+                self._width = width.to(u.AA).value  # pylint: disable=no-member
+            else:
+                raise TypeError("width must be a wavelength or frequency quantity!")
         else:
-            raise TypeError("width must be a wavelength or frequency quantity!")
-
+            try:
+                self._width = float(width)
+            except:
+                raise ValueError("width must be convertible to a float if without units.")
+            
+    def _update(self) -> None:
+        """Update steps needed upon modifying child attributes."""
+        pass
+                           
     def __str__(self) -> str:
         """Return string representation of filter.
         Format: instrument_band.
@@ -72,8 +98,14 @@ class Filter(Observer):
         """Return center of filter,
         in Angstroms.
         """
-        return self._center.to(u.AA)  # pylint: disable=no-member
-
+        return self._center * u.AA  # pylint: disable=no-member
+    
+    @center.setter
+    def center(self, center: Any) -> None:
+        """If center is given without units, assume angstroms."""
+        self._set_center(center)
+        self._update()
+        
     @property
     def width(self) -> u.Quantity:
         """Return width of filter,
@@ -81,7 +113,13 @@ class Filter(Observer):
         """
         if self._width is None:
             return self._width
-        return self._width.to(u.AA)  # pylint: disable=no-member
+        return self._width * u.AA  # pylint: disable=no-member
+    
+    @width.setter
+    def width(self, width: Any) -> None:
+        """If center is given without units, assume angstroms."""
+        self._set_width(width)
+        self._update()
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Filter):
@@ -160,7 +198,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
 
     def __init__(
         self,
-        times: Any,  # TODO: somehow enforce time-like
+        times: Optional[Any]=None,  # TODO: somehow enforce time-like
         fluxes: Optional[Iterable[T]] = None,
         flux_errs: Optional[Iterable[T]] = None,
         mags: Optional[Iterable[T]] = None,
@@ -170,12 +208,31 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         filt: Optional[Filter] = None,
         phased: bool = False,
     ) -> None:
+        super().__init__()
         self._phased = phased
         if (filt is not None) and (not isinstance(filt, Filter)):
             raise TypeError("filt must be None or a Filter object!")
         self._filter = filt
+        if filt is not None:
+            self.associated_objects['_filter'] = Filter.__name__
+            
         self._ts_cols = ["flux", "flux_unc", "mag", "mag_unc", "zpt"]
-        if isinstance(times, pd.DataFrame):
+        if times is None: # initialize empty
+            if [x for x in (fluxes, flux_errs, mags, mag_errs, zpts, upper_limits) if x is not None]:
+                raise TypeError("if times is None, all other arrays must also be None")
+            
+            self._ts = pd.DataFrame(
+                {
+                    "flux": np.array([], dtype=float),
+                    "flux_unc": np.array([], dtype=float),
+                    "mag": np.array([], dtype=float),
+                    "mag_unc": np.array([], dtype=float),
+                    "zpt": np.array([], dtype=float),
+                    "non_detections": np.array([], dtype=bool),
+                },
+                index=pd.to_datetime([])
+            )
+        elif isinstance(times, pd.DataFrame):
             df = times
             if "time" in df.columns:
                 astropy_dt = Time(df["time"], format="mjd").to_datetime()
@@ -237,12 +294,19 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
 
         self._ts.index.name = "time"
         self._rng = np.random.default_rng()
-        self._sort()  # sort by time
-        self._complete()  # fills in missing or inconsistent values
+        self._update()
 
         self._image_time_bins = np.array([0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 10_000])
         self._image_flux_bins = np.array([-1000, -2, -1, -0.5, -0.2, -0.1, 0, 0.1, 0.2, 0.5, 1, 2, 1000])
+        
+        # what should be saved to LightCurve object?
+        self.arr_attrs.append("_ts")
 
+    def _update(self) -> None:
+        """Update steps needed upon modifying child attributes."""
+        self._sort()
+        self._complete()
+        
     def _complete(self, force_update_mags: bool = False, force_update_fluxes: bool = False) -> None:
         """Given zeropoints, fills in missing apparent
         magnitudes from fluxes and vice versa.
@@ -626,8 +690,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         new_df.drop(columns="time", inplace=True)
         new_df.index.name = "time"
         self._ts = pd.concat([self._ts, new_df])
-        self._sort()
-        self._complete()
+        self._update()
 
     def merge_close_times(self, eps: float = 4e-2) -> None:  # TODO: fix for LCs without flux uncertainties
         """Merge times that are close enough together
@@ -702,8 +765,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         for col in self._ts_cols:  # ensure all original columns exist
             if col not in self._ts.columns:
                 self._ts[col] = np.nan
-        self._sort()
-        self._complete()
+        self._update()
 
     def pad(self: LightT, fill: dict[str, Any], n_times: int, inplace: bool = False) -> LightT:
         """Extends light curve by padding.

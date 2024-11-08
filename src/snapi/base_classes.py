@@ -5,7 +5,7 @@ from matplotlib.axes import Axes
 from astropy.io.misc import hdf5
 import pandas as pd
 
-from .utils import list_datasets
+from .utils import list_datasets, str_to_class
 
 
 MeasT = TypeVar("MeasT", bound="MeasurementSet")
@@ -16,18 +16,21 @@ class Base(ABC):
 
     Currently empty.
     """
-    _class_str = "base"
-    _arr_attrs: set[str] = set()
-    _meta_attrs: set[str] = set()
-    _associated_objects: dict[str, object] = {}
 
     @abstractmethod
     def __init__(self) -> None:
         self._id: str = ""
+        self.associated_objects: dict[str, object] = {}
+        self.arr_attrs: list[str] = []
+        self.meta_attrs: list[str] = []
 
     def copy(self: BaseT) -> BaseT:
         """Return a deep copy of the object."""
         return copy.deepcopy(self)
+    
+    def update(self) -> None:
+        """Update steps needed upon modifying child attributes."""
+        pass
 
     @property
     def id(self) -> str:
@@ -58,30 +61,41 @@ class Base(ABC):
             Whether to append to existing file.
         """
         if path is None:
-            path = "/" + self._class_str
-
+            path = "/" + type(self).__name__
+            
         mode = "a" if append else "w"
 
         # Save DataFrame and attributes to HDF5
         with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
-            for arr_attr in self._arr_attrs:
+            store.put(path, pd.Series([]))
+            # first store info on array + meta attrs and assoc. objects
+            store.put(path + "/arr_attrs", pd.Series(self.arr_attrs))
+            store.put(path + "/meta_attrs", pd.Series(self.meta_attrs))
+            obj_keys = []
+            obj_values = []
+            for (k, v) in self.associated_objects.items():
+                obj_keys.append(k)
+                obj_values.append(v)
+            store.put(path + "/assoc_keys", pd.Series(obj_keys))
+            store.put(path + "/assoc_types", pd.Series(obj_values))
+                    
+            for arr_attr in self.arr_attrs:
                 store.put(path + f"/{arr_attr}", getattr(self, arr_attr))
-
+                                            
         # Save any meta attrs
-        with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
-            for meta_attr in self._meta_attrs:
-                setattr(store.get_storer(path).attrs, "instrument", getattr(self, meta_attr))
+        with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
+            for meta_attr in self.meta_attrs:
+                setattr(store.get_storer(path).attrs, meta_attr, getattr(self, meta_attr))
 
         # Save associated objects
-        for assoc_obj in self._associated_objects:
-            getattr(self, assoc_obj).save(file_name = file_name, path = path + f"/{assoc_obj}", append = True)
+        for assoc_obj in self.associated_objects:
+            getattr(self, assoc_obj).save(file_name = file_name, path = path + f"/{assoc_obj}", append=True)
 
     @classmethod
     def load(
         cls: Any,
         file_name: str,
         path: Optional[str] = None,
-        archival: bool = False,
     ) -> Any:
         """Load LightCurve from saved HDF5 table. Automatically
         extracts feature information.
@@ -89,16 +103,35 @@ class Base(ABC):
         new_obj = cls()
 
         if path is None:
-            paths = list_datasets(file_name, archival)
-            if len(paths) > 1:
-                raise ValueError("Multiple datasets found in file. Please specify path.")
-            path = paths[0]
-
+            path = "/" + cls.__name__
+            with pd.HDFStore(file_name) as store:
+                try:
+                    store[path]
+                except:
+                    raise ValueError(f"Default path {path} does not exist in file, please manually set path.")
+            
         with pd.HDFStore(file_name) as store:
-            for arr_a in cls._arr_attrs:
-                setattr(new_obj, arr_a, store[path+f"/{arr_a}"])
-            for assoc_obj in cls._associated_objects: #TODO: make many-to-one compatible
-                setattr(new_obj, assoc_obj, cls._associated_objects[assoc_obj])
+            # unload attributes first
+            attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
+            
+            # get info about meta, array attributes, and associated objects
+            new_obj.arr_attrs = list(store[path+'/arr_attrs'])
+            new_obj.meta_attrs = list(store[path + '/meta_attrs'])
+            assoc_obj_keys = store[path + '/assoc_keys']
+            assoc_obj_types = store[path + '/assoc_types']
+            new_obj.associated_objects = {k: t for (k,t) in zip(assoc_obj_keys, assoc_obj_types)}
+            
+            # extract meta values
+            for a_key in new_obj.meta_attrs:
+                setattr(new_obj, a_key, attr_dict[a_key])
+            
+            for attr_name in new_obj.arr_attrs: # array attribute
+                setattr(new_obj, attr_name, store[f"{path}/{attr_name}"])
+            for attr_name in new_obj.associated_objects: # associated object load
+                subtype = str_to_class(new_obj.associated_objects[attr_name])
+                setattr(new_obj, attr_name, subtype.load(file_name, f"{path}/{attr_name}"))
+                    
+            new_obj.update()
             
             return new_obj
 
@@ -119,10 +152,7 @@ class Measurement(Base):
     modality, such as a spectrum or light curve."""
 
     def __init__(self) -> None:
-        self._observer = None
-        self._arr_attrs = set()
-
-    
+        super().__init__()
 
 class MeasurementSet(Base):
     """Base class for storing collection
@@ -148,6 +178,7 @@ class Observer(Base):
         self,
         instrument: str,
     ) -> None:
+        super().__init__()
         self._instrument = instrument
 
     def __eq__(self, value: object) -> bool:

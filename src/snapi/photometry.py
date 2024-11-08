@@ -94,7 +94,10 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             },
             index=pd.DatetimeIndex([]),
         )
-
+        self._update()
+        
+    def update(self) -> None:
+        """Update steps needed upon modifying child attributes."""
         self._generate_time_series()
 
     def _generate_time_series(self) -> None:
@@ -281,7 +284,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             t0 = np.nanmedian([l.peak["time"] for l in self._lightcurves])
         for lc in self._lightcurves:
             lc.phase(t0=t0, periodic=periodic, period=period)
-        self._generate_time_series()
+        self._update()
 
     def calculate_period(self) -> float:
         """Estimate multi-band period of light curves in set."""
@@ -301,7 +304,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         for lc in self._lightcurves:
             lc.fluxes /= np.nanmax(peak_fluxes)
             lc.flux_errors /= np.nanmax(peak_fluxes)
-        self._generate_time_series()
+        self._update()
 
     def plot(self, ax: Axes, formatter: Optional[Formatter] = None, mags: bool = True) -> Axes:
         """Plots the collection of light curves.
@@ -349,10 +352,11 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             # remove any duplicate times
             if lc.filter == light_curve.filter:
                 lc.merge(light_curve)
-                self._generate_time_series()
+                self._update()
                 return None
+            
         self._lightcurves.append(light_curve.copy())
-        self._generate_time_series()  # update time series
+        self._update()
         return None
 
     def remove_lightcurve(self, light_curve: LightCurve) -> None:
@@ -364,7 +368,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             the light curve to remove from the set of photometry
         """
         self._lightcurves.remove(light_curve)
-        self._generate_time_series()  # update time series
+        self._update()
 
     def tile(self, n_lightcurves: int) -> None:
         """Duplicate light curves until desired number
@@ -397,7 +401,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
                 self._lightcurves.append(new_lc)
                 if len(self._lightcurves) == n_lightcurves:
                     break
-        self._generate_time_series()  # update time series
+        self._update()
 
     def __len__(self) -> int:
         """

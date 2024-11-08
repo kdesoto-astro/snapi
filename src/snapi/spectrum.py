@@ -1,6 +1,6 @@
 """Class for a single spectrum."""
 import copy
-from typing import Any, Iterable, Optional, Sequence, Union
+from typing import Any, Iterable, Optional, Sequence, Union, TypeVar, Type
 
 import astropy.units as u
 import numpy as np
@@ -10,7 +10,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 import pandas as pd
 
-from .base_classes import Observer, Plottable
+from .base_classes import Observer, Plottable, Measurement
 from .constants import ION_LINES
 from .formatter import Formatter
 
@@ -283,11 +283,11 @@ class Spectrum(Measurement, Plottable):
 
     @classmethod
     def load(
-        cls: Type[Spec],
+        cls: Type[SpecT],
         file_name: str,
         path: Optional[str] = None,
         archival: bool = False,
-    ) -> LightT:
+    ) -> SpecT:
         """Load LightCurve from saved HDF5 table. Automatically
         extracts feature information.
         """
