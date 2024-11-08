@@ -27,89 +27,105 @@ class ALeRCEQueryAgent(QueryAgent):
             2: "r",
             3: "i",
         }
+        self._band_widths = {
+            1: 1317.15,
+            2: 1553.43,
+            3: 1488.99,
+        }
+        self._band_centers = {
+            1: 4746.48,
+            2: 6366.38,
+            3: 7829.03,
+        }
 
-    def _photometry_helper(self, objname: str) -> tuple[set[LightCurve], bool]:
+    def _photometry_helper(self, objname: str) -> tuple[list[LightCurve], bool]:
         """
         Helper function for querying photometry data.
         """
         if objname[:3] != "ZTF":
-            return set(), False
+            return [], False
         # Getting detections for an object
         lc = self._client.query_lightcurve(objname, format="pandas")
-        dets = list(lc['detections'])[0]
-        detections = pd.DataFrame(dets)
+        detections = pd.DataFrame(list(lc["detections"])[0])
 
-        try:  # not available with older versions of alerce-client
-            forced_dets = list(lc['forced_photometry'])[0]
-            forced_detections = pd.DataFrame(forced_dets)
-            non_na_columns = detections.columns[detections.notna().any()]
+        # add nondetections
+        nondetections = pd.DataFrame(list(lc["non_detections"])[0])
+        non_na_columns = detections.columns[detections.notna().any()]
+        non_na_columns2 = nondetections.columns[nondetections.notna().any()]
+        all_detections = pd.concat([detections[non_na_columns], nondetections[non_na_columns2]])
+
+        if "forced_photometry" in lc:  # not available with older versions of alerce-client
+            forced_detections = pd.DataFrame(list(lc["forced_photometry"])[0])
+            non_na_columns = all_detections.columns[all_detections.notna().any()]
             non_na_columns2 = forced_detections.columns[forced_detections.notna().any()]
-            all_detections = pd.concat([detections[non_na_columns], forced_detections[non_na_columns2]])
-        except KeyError:
-            all_detections = detections
+            all_detections = pd.concat([all_detections[non_na_columns], forced_detections[non_na_columns2]])
 
         if "mjd" not in all_detections.columns:
-            return set(), False
+            return [], False
         if len(all_detections) == 0:
-            return set(), False
-                
+            return [], False
+
         # add extra fields
-        if 'extra_fields' in all_detections.columns:
-            extra_fields = all_detections['extra_fields'].apply(pd.Series)
+        if "extra_fields" in all_detections.columns:
+            extra_fields = all_detections["extra_fields"].apply(pd.Series)
             cols_to_use = extra_fields.columns.difference(all_detections.columns)
-            all_detections = pd.concat([all_detections, extra_fields[cols_to_use]], axis=1,)
-            all_detections.drop(columns=['extra_fields'], inplace=True)
-        
+            all_detections = pd.concat(
+                [all_detections, extra_fields[cols_to_use]],
+                axis=1,
+            )
+            all_detections.drop(columns=["extra_fields"], inplace=True)
+
         all_detections.reset_index(drop=True, inplace=True)
-                
+
         # add missing fields
-        if 'mag' not in all_detections.columns:
-            if 'magpsf' in all_detections.columns:
+        if "mag" not in all_detections.columns:
+            if "magpsf" in all_detections.columns:
                 all_detections["mag"] = all_detections["magpsf"]
                 all_detections["e_mag"] = all_detections["sigmapsf"]
-                if 'magap' in all_detections.columns:
-                    all_detections['mag'].fillna(all_detections['magap'])
+                if "magap" in all_detections.columns:
+                    all_detections["mag"].fillna(all_detections["magap"])
                     all_detections["e_mag"].fillna(all_detections["sigmagap"])
             else:
                 all_detections["mag"] = all_detections["magap"]
                 all_detections["e_mag"] = all_detections["sigmagap"]
         else:
-            if 'magpsf' in all_detections.columns:
-                all_detections['mag'].fillna(all_detections['magpsf'])
+            if "magpsf" in all_detections.columns:
+                all_detections["mag"].fillna(all_detections["magpsf"])
                 all_detections["e_mag"].fillna(all_detections["sigmapsf"])
-            if 'magap' in all_detections.columns:
-                all_detections['mag'].fillna(all_detections['magap'])
+            if "magap" in all_detections.columns:
+                all_detections["mag"].fillna(all_detections["magap"])
                 all_detections["e_mag"].fillna(all_detections["sigmagap"])
 
-        if 'magzpsci' not in all_detections.columns:
-            all_detections['magzpsci'] = np.nan
-        
+        all_detections["magzpsci"] = 23.90  # bandaid to make fluxes all mu-Jy
+
         # find non-detections
-        all_detections['upper_limit'] = False
-        nondetect_mask = (all_detections['mag'] == 100.) | (all_detections['mag'].isna())
+        all_detections["upper_limit"] = False
+        nondetect_mask = (all_detections["mag"] == 100.0) | (all_detections["mag"].isna())
         if "diffmaglim" in all_detections.columns:
-            all_detections.loc[nondetect_mask, 'mag'] = all_detections.loc[nondetect_mask, 'diffmaglim']
-            all_detections.loc[nondetect_mask, 'e_mag'] = np.nan
-            all_detections.loc[nondetect_mask, 'upper_limit'] = True
-        
-        lcs: set[LightCurve] = set()
+            all_detections.loc[nondetect_mask, "mag"] = all_detections.loc[nondetect_mask, "diffmaglim"]
+            all_detections.loc[nondetect_mask, "e_mag"] = np.nan
+            all_detections.loc[nondetect_mask, "upper_limit"] = True
+
+        all_detections.rename(columns={
+            'mjd': 'time',
+            'e_mag': 'mag_unc',
+            'upper_limit': 'non_detections',
+            'magzpsci': 'zpt'
+        }, inplace=True)
+
+        lcs: list[LightCurve] = []
+
         for b in np.unique(all_detections["fid"]):
             filt = Filter(
                 instrument="ZTF",
                 band=self._int_to_band[b],
-                center=np.nan * u.AA,  # pylint: disable=no-member
+                center=self._band_centers[b] * u.AA,  # pylint: disable=no-member
+                width=self._band_widths[b] * u.AA,  # pylint: disable=no-member
             )  # pylint: disable=no-member
             mask = all_detections["fid"] == b
-
-            lc = LightCurve(
-                times=Time(all_detections.loc[mask, "mjd"], format="mjd"),
-                mags=all_detections.loc[mask, 'mag'],
-                mag_errs=all_detections.loc[mask, 'e_mag'],
-                upper_limits=all_detections.loc[mask, 'upper_limit'],
-                zpts=all_detections.loc[mask, 'magzpsci'],
-                filt=filt,
-            )
-            lcs.add(lc)
+            lc = LightCurve(all_detections.loc[mask,:], filt=filt)
+            lcs.append(lc)
+            
         return lcs, True
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:

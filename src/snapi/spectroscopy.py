@@ -29,17 +29,36 @@ class Spectroscopy(MeasurementSet, Plottable):
         # order spectra
         self._spectra = sorted(self._spectra, key=lambda x: x.time if x.time is not None else np.inf)
 
+    def __len__(self):
+        """Return number of spectra associated with this spectroscopy object."""
+        return len(self._spectra)
+    
+    def __eq__(self, other: object) -> bool:
+        """Return True if """
+        if not isinstance(other, self.__class__):
+            return False
+                
+        if len(self) != len(other):
+            return False
+                
+        # assume ordered
+        for s_idx, self_spec in enumerate(self._spectra):
+            if other.spectra[s_idx] != self_spec:
+                return False
+            
+        return True
+    
     @property
     def spectra(self) -> list[Spectrum]:
         """Return list of spectra."""
         return copy.deepcopy(self._spectra)
 
-    def grid(self, normalize: bool = False) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+    def grid(self, normalize: bool = False) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Return common wavelength grid and flux grid for all spectra.
         If normalize is True, normalize fluxes for each spectrum between 0 and 1."""
         wv_arr = [spec.wavelengths for spec in self._spectra]
         all_wvs = np.unique(np.concatenate(wv_arr))
-        interp_fluxes = np.zeros((len(self._spectra), len(all_wvs)), dtype=np.float32)
+        interp_fluxes = np.zeros((len(self._spectra), len(all_wvs)), dtype=np.float64)
         for i, spec in enumerate(self._spectra):
             interp_fluxes[i] = np.interp(all_wvs, spec.wavelengths, spec.fluxes)
             if normalize:

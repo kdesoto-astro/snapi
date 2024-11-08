@@ -44,7 +44,12 @@ class Transient(Base):
             self.photometry = Photometry()
         else:
             self.photometry = photometry
-        self.spectroscopy = spectroscopy
+        
+        if spectroscopy is None:
+            self.spectroscopy = Spectroscopy()
+        else:
+            self.spectroscopy = spectroscopy
+            
         if internal_names is None:
             self.internal_names = set()
         else:
@@ -66,11 +71,77 @@ class Transient(Base):
                 continue
             if int(n[:4]) < 1900 or int(n[:4]) > 2100:
                 continue
-            self.internal_names.add(self.id)
+            if self.id != str(id(self)): # don't move hash to internal_names
+                self.internal_names.add(self.id)
             self.internal_names.remove(n)
             self.id = n
             break
 
+    def __len__(self) -> int:
+        """Returns the number of observations associated with
+        the transient (both photometric and spectroscopic)."""
+        return len(self.photometry) + len(self.spectroscopy)
+    
+    def __eq__(self, other: object) -> bool:
+        """Return True if there is a shared name
+        between self and other, and if coordinate,
+        redshift, and photometry/spectroscopy match.
+        """
+        if not isinstance(other, self.__class__):
+            return False
+        names_self = {*self.internal_names, self.id}
+        names_other = {*other.internal_names, other.id}
+
+        if len(names_self.intersection(names_other)) == 0:
+            return False
+                
+        if self.redshift is None:
+            if other.redshift is not None:
+                return False
+        else:
+            if other.redshift is None:
+                return False
+            if (abs(self.redshift - other.redshift)/self.redshift) > 1e-2: # 1% precision
+                return False
+                        
+        if self._coord is not None:
+            if other.coordinates is None:
+                return False
+            if self._coord.separation(other.coordinates).to(u.arcsec).value > 1.: # 1 arcsec allowance
+                return False
+        else:
+            if other.coordinates is not None:
+                return False
+            
+        return (self.photometry == other.photometry
+        ) & (
+            self.spectroscopy == other.spectroscopy
+        )
+    
+    def overlaps(self, other: object) -> bool:
+        """Return True if there is a shared name
+        between self and other, and if coordinates/redshift
+        are self-consistent.
+        """
+        if not isinstance(other, self.__class__):
+            return False
+        
+        names_self = {*self.internal_names, self.id}
+        names_other = {*other.internal_names, other.id}
+
+        if len(names_self.intersection(names_other)) == 0:
+            return False
+        
+        if (self.redshift is not None) and (other.redshift is not None):
+            if (abs(self.redshift - other.redshift)/self.redshift) > 1e-2: # 1% precision
+                return False
+            
+        if (self._coord is not None) and (other.coordinates is not None):
+            if self._coord.separation(other.coordinates).to(u.arcsec).value > 1.: # 1 arcsec allowance
+                return False
+            
+        return True
+    
     @property
     def coordinates(self) -> SkyCoord:
         """Returns the coordinates of the transient."""
@@ -133,6 +204,7 @@ class Transient(Base):
             pass
 
         self.photometry.save(filename, path="photometry")
+        self.spectroscopy.save(filename, path="spectroscopy")
 
         with h5py.File(filename, "a") as f:
             f.attrs["id"] = self.id
@@ -146,10 +218,11 @@ class Transient(Base):
             f.attrs["internal_names"] = list(self.internal_names)
 
     @classmethod
-    def load(cls: Type[TransientT], filename: str) -> TransientT:
+    def load(cls: Type[TransientT], filename: str, archival: bool = False) -> TransientT:
         """Load transient object from HDF5 file."""
+        photometry: Photometry = Photometry.load(filename, path="photometry", archival=archival)
+        spectroscopy: Spectroscopy = Spectroscopy.load(filename, path="spectroscopy", archival=archival)
         with h5py.File(filename, "r") as f:
-            photometry: Photometry = Photometry.load(filename, path="photometry")
             iid = f.attrs.get("id")
             ra = f.attrs.get("ra")
             if ra is not None:
@@ -166,6 +239,7 @@ class Transient(Base):
             dec=dec,
             iid=iid,
             photometry=photometry,
+            spectroscopy=spectroscopy,
             spec_class=spec_class,
             redshift=redshift,
             internal_names=internal_names,
