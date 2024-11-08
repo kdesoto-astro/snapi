@@ -62,11 +62,6 @@ queries = [
     "antares_client>=1.8.0",
     "astro_ghost",
 ]
-queries = [
-    "alerce>=1.2.0",
-    "antares_client>=1.8.0",
-    "astro_ghost",
-]
 
 [build-system]
 requires = [
