@@ -161,7 +161,7 @@ class MeasurementSet(Base):
     """
 
     def __init__(self) -> None:
-        pass
+        super().__init__()
 
     @abstractmethod
     def filter_by_instrument(self: MeasT, instrument: str) -> MeasT:

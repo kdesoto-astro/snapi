@@ -64,8 +64,9 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
     """Contains collection of LightCurve objects."""
 
     def __init__(self, lcs: Optional[list[LightCurve]] = None) -> None:
+        super().__init__()
+        self._lightcurves: list[str] = []
         if lcs is None:
-            self._lightcurves: list[LightCurve] = []
             self._phased = None
         else:
             phot_phased = None
@@ -77,8 +78,14 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
                 # ensure all are either phased or unphased
                 if (phot_phased and not lc.is_phased) or (not phot_phased and lc.is_phased):
                     raise ValueError("Light curves must be all phased or unphased!")
-            self._lightcurves = list(copy.deepcopy(lcs))
+                # save as associated object
+                self.associated_objects[str(lc.filter)] = LightCurve.__name__
+                setattr(self, str(lc.filter), lc.copy())
+                self._lightcurves.append(str(lc.filter))
+                
             self._phased = phot_phased
+            
+        self.meta_attrs.extend(["_phased", "_lightcurves"])
         self._rng: np.random.Generator = np.random.default_rng()
         self._ts = pd.DataFrame(
             {
@@ -94,7 +101,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             },
             index=pd.DatetimeIndex([]),
         )
-        self._update()
+        self.update()
         
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
@@ -105,7 +112,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         if len(self._lightcurves) == 0:
             return None
 
-        self._ts = pd.concat([lc.full_time_series for lc in self._lightcurves])
+        self._ts = pd.concat([getattr(self, lc).full_time_series for lc in self._lightcurves])
         self._ts.sort_values(by=["time", "filters"], inplace=True)
 
         return None
@@ -240,7 +247,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         List[LightCurve]
         the set of light curves
         """
-        return copy.deepcopy(self._lightcurves)
+        return [getattr(self, lc).copy() for lc in self._lightcurves]
 
     def filter_by_instrument(self: PhotT, instrument: str) -> PhotT:
         """Return MeasurementSet with only measurements
@@ -257,17 +264,16 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         the Photometry object with only the
         desired instrument's measurements
         """
-        filtered_lcs = [
-            lc for lc in self._lightcurves if (lc.filter is not None and lc.filter.instrument == instrument)
-        ]
+        filtered_lcs = [getattr(self, lc) for lc in self._lightcurves if lc.split("_")[0] == instrument]
         return self.__class__(filtered_lcs)
 
     def filter(self: PhotT, filts: Any) -> PhotT:
         """Return new Photometry with only light curves
         from filters in 'filts.'
         """
-        filts_str = [str(f) for f in np.atleast_1d(filts)]
-        filtered_lcs = [lc for lc in self._lightcurves if str(lc.filter) in filts_str]
+        filts = np.atleast_1d(filts)
+        filts = [str(f) for f in filts]
+        filtered_lcs = [getattr(self, filt) for filt in filts]
         return self.__class__(filtered_lcs)
 
     def phase(
@@ -281,10 +287,10 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         if periodic and period is None:
             period = self.calculate_period()
         if t0 is None:
-            t0 = np.nanmedian([l.peak["time"] for l in self._lightcurves])
+            t0 = np.nanmedian([getattr(self, l).peak["time"] for l in self._lightcurves])
         for lc in self._lightcurves:
-            lc.phase(t0=t0, periodic=periodic, period=period)
-        self._update()
+            getattr(self, lc).phase(t0=t0, periodic=periodic, period=period)
+        self.update()
 
     def calculate_period(self) -> float:
         """Estimate multi-band period of light curves in set."""
@@ -300,11 +306,12 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
 
     def normalize(self: PhotT) -> None:
         """Normalize the light curves in the set."""
-        peak_fluxes = [lc.peak["flux"] for lc in self._lightcurves]
-        for lc in self._lightcurves:
+        peak_fluxes = [getattr(self, lc) .peak["flux"] for lc in self._lightcurves]
+        for lc_name in self._lightcurves:
+            lc = getattr(self, lc_name)
             lc.fluxes /= np.nanmax(peak_fluxes)
             lc.flux_errors /= np.nanmax(peak_fluxes)
-        self._update()
+        self.update()
 
     def plot(self, ax: Axes, formatter: Optional[Formatter] = None, mags: bool = True) -> Axes:
         """Plots the collection of light curves.
@@ -322,7 +329,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         if formatter is None:
             formatter = Formatter()  # make default formatter
         for lc in self._lightcurves:
-            lc.plot(ax, formatter=formatter, mags=mags)
+            getattr(self, lc).plot(ax, formatter=formatter, mags=mags)
             formatter.rotate_colors()
             formatter.rotate_markers()
             if mags:
@@ -348,18 +355,20 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
 
         light_curve.merge_close_times(eps=1e-5)  # pylint: disable=no-member
 
-        for lc in self._lightcurves:
+        for lc_filt in self._lightcurves:
             # remove any duplicate times
-            if lc.filter == light_curve.filter:
-                lc.merge(light_curve)
-                self._update()
+            if lc_filt == str(light_curve.filter):
+                getattr(self, lc_filt).merge(light_curve)
+                self.update()
                 return None
             
-        self._lightcurves.append(light_curve.copy())
-        self._update()
+        self._lightcurves.append(str(light_curve.filter))
+        setattr(self, str(light_curve.filter), light_curve)
+        self.associated_objects[str(light_curve.filter)] = LightCurve.__name__
+        self.update()
         return None
 
-    def remove_lightcurve(self, light_curve: LightCurve) -> None:
+    def remove_lightcurve(self, filt_name: str) -> None:
         """Remove a light curve from the set of photometry.
 
         Parameters
@@ -367,8 +376,11 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         lc: LightCurve
             the light curve to remove from the set of photometry
         """
-        self._lightcurves.remove(light_curve)
-        self._update()
+        self._lightcurves.remove(filt_name)
+        self.associated_objects.pop(filt_name)
+        attr = getattr(self, filt_name)
+        del attr
+        self.update()
 
     def tile(self, n_lightcurves: int) -> None:
         """Duplicate light curves until desired number
@@ -386,22 +398,26 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         if len(self._lightcurves) > n_lightcurves:
             raise ValueError("Number of light curves exceeds the desired limit.")
         it = 0
-        lcs_orig = copy.deepcopy(self._lightcurves)
+        lcs_shuffled = copy.deepcopy(self._lightcurves)
         while len(self._lightcurves) < n_lightcurves:
             it += 1
-            for lc in lcs_orig:
+            np.random.shuffle(lcs_shuffled)
+            for lc_name in lcs_shuffled:
+                lc = getattr(self, lc_name)
                 new_lc = lc.copy()
                 if lc.filter is not None:
                     new_lc.filter = Filter(
                         instrument=lc.filter.instrument,
-                        band=lc.filter.band + str(it),
+                        band=lc_name + str(it),
                         center=lc.filter.center,
                         width=lc.filter.width,
                     )
-                self._lightcurves.append(new_lc)
+                self._lightcurves.append(lc_name + str(it))
+                setattr(self, lc_name + str(it), new_lc)
+                self.associated_objects[lc_name + str(it)] = LightCurve.__name__
                 if len(self._lightcurves) == n_lightcurves:
                     break
-        self._update()
+        self.update()
 
     def __len__(self) -> int:
         """
@@ -418,7 +434,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """Test photometry equality."""
         if not isinstance(other, self.__class__):
             return False
-
+        
         return self.detections.equals(other.detections) & (
             self.non_detections.equals(other.non_detections)
         )  # order of LCs irrelevant
@@ -574,7 +590,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             self.phase() # first have to phase
         new_lcs = []
         for lc in self._lightcurves:
-            new_lcs.append(lc.absolute(redshift))
+            new_lcs.append(getattr(self, lc).absolute(redshift))
         return self.__class__(new_lcs)
 
     def correct_extinction(
@@ -583,40 +599,5 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """Return new Photometry with extinction corrected magnitudes."""
         new_lcs = []
         for lc in self._lightcurves:
-            new_lcs.append(lc.correct_extinction(mwebv=mwebv, coordinates=coordinates))
+            new_lcs.append(getattr(self, lc).correct_extinction(mwebv=mwebv, coordinates=coordinates))
         return self.__class__(new_lcs)
-
-    def save(self, filename: str, path: str = "photometry") -> None:
-        """Save the Photometry object to and HDF5 file.
-
-        Parameters
-        ----------
-        filename: str
-            the filename to save the Photometry object to
-        """
-        append = False
-        for lc in self._lightcurves:
-            if not append:
-                lc.save(filename, path=f"/{path}/{str(lc.filter)}")
-                append = True
-            else:
-                lc.save(filename, path=f"/{path}/{str(lc.filter)}", append=True)
-
-    @classmethod
-    def load(cls: Type[PhotT], filename: str, path: str = "photometry", archival: bool = False) -> PhotT:
-        """Load the Photometry object from an HDF5 file.
-
-        Parameters
-        ----------
-        filename: str
-            the filename to load the Photometry object from
-        """
-        lcs = []
-        # get all paths that start with path
-        lc_path_list = [lc_path for lc_path in list_datasets(filename, archival) if lc_path.startswith(path)]
-        for lc_path in lc_path_list:
-            lc = LightCurve.load(filename, path=lc_path, archival=archival)
-            lcs.append(lc)
-
-        phot: PhotT = cls(lcs)
-        return phot

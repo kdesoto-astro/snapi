@@ -40,7 +40,7 @@ class Filter(Observer):
         
         self._set_center(center)
         self._set_width(width)
-        self._update()
+        self.update()
         self.meta_attrs = ['_instrument', '_band', '_center', '_width'] # stored as floats assuming u.AA
 
     
@@ -78,7 +78,7 @@ class Filter(Observer):
             except:
                 raise ValueError("width must be convertible to a float if without units.")
             
-    def _update(self) -> None:
+    def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
         pass
                            
@@ -104,7 +104,7 @@ class Filter(Observer):
     def center(self, center: Any) -> None:
         """If center is given without units, assume angstroms."""
         self._set_center(center)
-        self._update()
+        self.update()
         
     @property
     def width(self) -> u.Quantity:
@@ -119,7 +119,7 @@ class Filter(Observer):
     def width(self, width: Any) -> None:
         """If center is given without units, assume angstroms."""
         self._set_width(width)
-        self._update()
+        self.update()
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Filter):
@@ -294,7 +294,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
 
         self._ts.index.name = "time"
         self._rng = np.random.default_rng()
-        self._update()
+        self.update()
 
         self._image_time_bins = np.array([0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 10_000])
         self._image_flux_bins = np.array([-1000, -2, -1, -0.5, -0.2, -0.1, 0, 0.1, 0.2, 0.5, 1, 2, 1000])
@@ -302,7 +302,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         # what should be saved to LightCurve object?
         self.arr_attrs.append("_ts")
 
-    def _update(self) -> None:
+    def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
         self._sort()
         self._complete()
@@ -690,7 +690,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         new_df.drop(columns="time", inplace=True)
         new_df.index.name = "time"
         self._ts = pd.concat([self._ts, new_df])
-        self._update()
+        self.update()
 
     def merge_close_times(self, eps: float = 4e-2) -> None:  # TODO: fix for LCs without flux uncertainties
         """Merge times that are close enough together
@@ -765,7 +765,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         for col in self._ts_cols:  # ensure all original columns exist
             if col not in self._ts.columns:
                 self._ts[col] = np.nan
-        self._update()
+        self.update()
 
     def pad(self: LightT, fill: dict[str, Any], n_times: int, inplace: bool = False) -> LightT:
         """Extends light curve by padding.

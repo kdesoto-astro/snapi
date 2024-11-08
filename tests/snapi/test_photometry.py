@@ -124,7 +124,7 @@ def test_remove_lightcurve(test_photometry: Photometry, test_lightcurve1: LightC
     """Tests removing light curve from Photometry."""
     phot = copy.deepcopy(test_photometry)
     assert len(phot) == 2
-    phot.remove_lightcurve(test_lightcurve1)
+    phot.remove_lightcurve(str(test_lightcurve1.filter))
     assert len(phot) == 1
     assert phot.light_curves[0] != test_lightcurve1
 
