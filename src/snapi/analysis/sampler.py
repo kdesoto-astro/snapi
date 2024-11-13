@@ -46,11 +46,26 @@ class SamplerResult:
 
     def __str__(self) -> str:
         return str(self._fit_params)
+    
+    @property
+    def sampler(self) -> str:
+        """Return sampler name."""
+        return self._sampler_name
 
     @property
     def fit_parameters(self) -> pd.DataFrame:
         """Returns the fit parameters."""
         return self._fit_params.copy()
+    
+    @fit_parameters.setter
+    def fit_parameters(self, fit_parameters: pd.DataFrame) -> None:
+        """Augments fit_parameters attribute.
+        Columns should stay the same.
+        """
+        if fit_parameters.columns != self._fit_params.columns:
+            raise ValueError("columns must match between original and new fit_parameters")
+            
+        self._fit_params = fit_parameters
 
     def save(
         self, save_prefix: str, save_folder: Optional[str] = None, hdf5_path: Optional[str] = None
