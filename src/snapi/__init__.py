@@ -2,7 +2,7 @@ import numpy as np  # pylint: disable
 
 from snapi.base_classes import Base, MeasurementSet, Plottable
 
-from .analysis import Sampler, SamplerResult
+from .analysis import Sampler, SamplerResult, ClassifierResult
 from .formatter import Formatter
 from .image import Image
 
@@ -12,22 +12,26 @@ from .photometry import Photometry
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrometer, Spectrum
 from .transient import Transient
+from .groups import TransientGroup, SamplerResultGroup
 
 np.seterr(divide="ignore", invalid="ignore")
 
 __all__ = [
     "Base",
-    "Plottable",
-    "MeasurementSet",
+    "ClassifierResult",
+    "Filter",
+    "Formatter",
     "Image",
-    "Spectroscopy",
-    "Spectrometer",
-    "Photometry",
     "LightCurve",
+    "MeasurementSet",
+    "Photometry",
+    "Plottable",
+    "Sampler",
+    "SamplerResult",
+    "SamplerResultGroup",
+    "Spectrometer",
+    "Spectroscopy",
     "Spectrum",
     "Transient",
-    "Formatter",
-    "Filter",
-    "SamplerResult",
-    "Sampler",
+    "TransientGroup",
 ]

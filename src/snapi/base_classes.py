@@ -80,7 +80,11 @@ class Base(ABC):
             store.put(path + "/assoc_types", pd.Series(obj_values))
                     
             for arr_attr in self.arr_attrs:
-                store.put(path + f"/{arr_attr}", getattr(self, arr_attr))
+                attr = getattr(self, arr_attr)
+                if isinstance(attr, pd.DataFrame):
+                    store.put(path + f"/{arr_attr}", attr)
+                else:
+                    store.put(path + f"/{arr_attr}", pd.Series(attr))
                                             
         # Save any meta attrs
         with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
@@ -124,9 +128,12 @@ class Base(ABC):
             # extract meta values
             for a_key in new_obj.meta_attrs:
                 setattr(new_obj, a_key, attr_dict[a_key])
-            
             for attr_name in new_obj.arr_attrs: # array attribute
-                setattr(new_obj, attr_name, store[f"{path}/{attr_name}"])
+                attr = store[f"{path}/{attr_name}"]
+                if isinstance(attr, pd.DataFrame):
+                    setattr(new_obj, attr_name, attr)
+                else:
+                    setattr(new_obj, attr_name, attr.to_numpy())
             for attr_name in new_obj.associated_objects: # associated object load
                 subtype = str_to_class(new_obj.associated_objects[attr_name])
                 setattr(new_obj, attr_name, subtype.load(file_name, f"{path}/{attr_name}"))
@@ -180,6 +187,7 @@ class Observer(Base):
     ) -> None:
         super().__init__()
         self._instrument = instrument
+        self.meta_attrs.append("_instrument")
 
     def __eq__(self, value: object) -> bool:
         """Check if two filters are equal."""

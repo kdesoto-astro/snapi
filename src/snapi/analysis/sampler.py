@@ -12,11 +12,111 @@ from sklearn.utils.validation import check_array, check_is_fitted
 
 from ..formatter import Formatter
 from ..photometry import Photometry
+from ..base_classes import Base
 
 ResultT = TypeVar("ResultT", bound="SamplerResult")
 
 
-class SamplerResult:
+class SamplerPrior(Base):
+    """Stores prior information for sampler. Only supports Gaussianity
+    or log-Gaussianity. If log-Gaussianity, parameters are assumed of logged
+    distribution."""
+    
+    def __init__(
+        self,
+        prior_info: pd.DataFrame
+    ):
+        """Stores prior information for the Sampler."""
+        for k in ['mean', 'stddev', 'min', 'max', 'logged', 'relative', 'relative_op']:
+            if k not in prior_info:
+                raise ValueError(f"column {k} not in prior_info!")
+        self._df = prior_info
+        self._rng = np.random.default_rng()
+        self.arr_attrs.append("_df")
+        
+    def update(self) -> None:
+        """Rearrange priors so correlated priors are sampled
+        in the right order.
+        """
+        rerun = False
+        while rerun:
+            rerun = False
+            ordered_indices = {ind: i for i, ind in enumerate(self._df.index)}
+            for r in self._df.loc[~pd.isna(self._df['relative'])]:
+                if ordered_indices[r['relative']] > ordered_indices[r.index]:
+                    # move r to back of array
+                    self._df.pop(r, inplace=True)
+                    self._df.append(r, inplace=True)
+                    rerun = True
+                    
+        self._df['tg_a'] = (self._df['min'] - self._df['mean']) / self._df['stddev']
+        self._df['tg_b'] = (self._df['max'] - self._df['mean']) / self._df['stddev']
+        
+    def __get__(self, key):
+        """Retrieve prior info for a certain parameter."""
+        return self._df[key, :]
+    
+    def __set__(self, key, val):
+        """Change prior information for a certain parameter."""
+        self._df.loc[key] = pd.Series(val)
+        
+    @property
+    def dataframe(self):
+        """Return all prior info in a dataframe."""
+        return self._df.copy()
+    
+    def _trunc_norm(self, fields, low=None, high=None):
+        """Provides keyword parameters to numpyro's TruncatedNormal, using the fields in PriorFields.
+
+        Parameters
+        ----------
+        fields : PriorFields
+            The (low, high, mean, standard deviation) fields of the truncated normal distribution.
+
+        Returns
+        -------
+        numpyro.distributions.TruncatedDistribution
+            A truncated normal distribution.
+        """
+        if high is None:
+            high = fields['max']
+        else:
+            high = jnp.minimum(high, fields['max'])
+        if low is None:
+            low = fields['min']
+        else:
+            low = jnp.maximum(low, fields['min'])
+
+        return dist.TruncatedNormal(
+            loc=fields['mean'], scale=fields['stddev'], low=low, high=high, validate_args=True
+        )
+    
+    def sample(self, cube=None, numpyro=False):
+        """Sample from priors. If numpyro=True, then
+        use the numpyro framework.
+        """
+        if numpyro:
+            vals = np.array([numpyro.sample(row.index, self._trunc_norm(row)) for row in self._df])
+        else:
+            if cube is None:
+                cube = self._rng.uniform(size=len(self._df))
+            vals = truncnorm.ppf(
+                cube, self._df['tg_a'], self._df['tg_b'],
+                loc=self._df['mean'],
+                scale=self._df['stddev']
+            )
+            
+        # log transformations
+        vals[self._df['logged']] = 10**vals[self._df['logged']]
+        
+        # relative transformations
+        vals[self._df['relative_op'] == '*'] *= self._df[self._df['relative_op'] == '*', 'relative']
+        vals[self._df['relative_op'] == '+'] += self._df[self._df['relative_op'] == '+', 'relative']
+        
+        return vals
+
+    
+class SamplerResult(Base):
     """Stores the results of a model sampler."""
 
     def __init__(
@@ -43,6 +143,9 @@ class SamplerResult:
 
         self._sampler_name = sampler_name
         self.score = 0.0
+        
+        self.arr_attrs = ["_fit_params",]
+        self.meta_attrs = ["_sampler_name", "score"]
 
     def __str__(self) -> str:
         return str(self._fit_params)
@@ -66,74 +169,74 @@ class SamplerResult:
             raise ValueError("columns must match between original and new fit_parameters")
             
         self._fit_params = fit_parameters
+    
+    def corner_plot(self, formatter=Formatter()):
+        """Plot corner plot of fit_parameters."""
+        fig = corner.corner(
+            self._fit_params.to_numpy(),
+            bins=20,
+            labels=self._fit_params.columns,
+            quantiles=[0.16, 0.5, 0.84],
+            show_titles=True,
+            title_kwargs={"fontsize": 20},
+            color=formatter.edge_color
+        )
+        return fig
+    
+    def umap(self, ax, diagnostic='pca', formatter=Formatter()):
+        """Plot UMAP representation of samples."""
+        import umap
+        import umap.plot
+        
+        features = self._fit_params.to_numpy()
+        
+        # add jitter
+        for i in range(features.shape[1]):
+            features[:,i] += np.random.normal(scale=np.std(features) / 1e3, size=len(features))
+            
+        nan_features = np.any(np.isnan(features), axis=1)
+        mapper = umap.UMAP().fit(features[~nan_features], force_all_finite=False)
+        
+        if diagnostic is None:
+            ax = umap.plot.points(
+                mapper,
+                cmap=formatter.cmap,
+                ax=ax,
+            )
+        else:
+            ax = umap.plot.diagnostic(
+                mapper,
+                cmap=formatter.cmap,
+                ax=ax,
+                diagnostic=diagnostic
+            )
+        return ax
+    
+    def pacmap(self, ax, formatter=Formatter()):
+        """Plot PACMAP representation of samples."""
+        import pacmap
+        
+        features = self._fit_params.to_numpy()
+        
+        # add jitter
+        for i in range(features.shape[1]):
+            features[:,i] += np.random.normal(scale=np.nanstd(features) / 100, size=len(features))
+        nan_features = np.any(np.isnan(features), axis=1)
+        
+        embedding = pacmap.PaCMAP(n_components=2)
+        X_transformed = embedding.fit_transform(features[~nan_features], init="pca")
 
-    def save(
-        self, save_prefix: str, save_folder: Optional[str] = None, hdf5_path: Optional[str] = None
-    ) -> None:
-        """Save the fit results to an HDF5 file.
+        ax.scatter(
+            X_transformed[labels == l, 0],
+            X_transformed[labels == l, 1],
+            s=formatter.marker_size,
+            color=formatter.edge_color,
+            marker=formatter.marker_style,
+            alpha=0.3,
+        )
+        return ax
 
-        Parameters
-        ----------
-        save_prefix : str
-            The filename (prefix + ".h5") to save the fit results to.
-        hdf5_path : str, optional
-            The path to save the fit results to in the HDF.
-        """
-        save_filename = save_prefix + ".h5"
-        if save_folder is not None:
-            save_filename = os.path.join(save_folder, save_filename)
-        if hdf5_path is None:
-            if self._sampler_name is not None:
-                hdf5_path = f"fit_result_{self._sampler_name}"
-            else:
-                hdf5_path = "fit_result"
-
-        with pd.HDFStore(save_filename, "a") as store:
-            store.put(hdf5_path, self._fit_params)
-            store.get_storer(hdf5_path).attrs.score = self.score  # type: ignore
-            store.get_storer(hdf5_path).attrs.sampler_name = self._sampler_name  # type: ignore
-
-    @classmethod
-    def load(
-        cls: Type[ResultT],
-        load_prefix: str,
-        load_folder: Optional[str] = None,
-        sampler_name: Optional[str] = None,
-        hdf5_path: Optional[str] = None,
-    ) -> ResultT:
-        """Load a SamplerResult from an HDF5 file.
-
-        Parameters
-        ----------
-        load_filename : str
-            The filename to load the fit results from.
-        hdf5_path : str, optional
-            The path to load the fit results from in the HDF
-
-        Returns
-        -------
-        FitResult
-            The loaded FitResult object.
-        """
-        load_filename = load_prefix + ".h5"
-        if load_folder is not None:
-            load_filename = os.path.join(load_folder, load_filename)
-        if hdf5_path is None:
-            if sampler_name is None:
-                hdf5_path = "fit_result"
-            else:
-                hdf5_path = f"fit_result_{sampler_name}"
-
-        with pd.HDFStore(load_filename, "r") as store:
-            fit_params = store[hdf5_path]
-            score = store.get_storer(hdf5_path).attrs.score  # type: ignore
-            sampler_name = store.get_storer(hdf5_path).attrs.sampler_name  # type: ignore
-
-        new_obj = cls(fit_params, sampler_name)
-        new_obj.score = score
-        return new_obj
-
-
+    
 class Sampler(BaseEstimator):  # type: ignore
     """Stores the superclass for sampler objects.
     Follows scikit-learn API conventions and inherits from

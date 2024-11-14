@@ -1,5 +1,6 @@
 # DUSTMAPS
 data/dustmaps/*
+data/ghost_db/database/GHOST.csv
 
 # API KEYS
 src/snapi/api_keys.py

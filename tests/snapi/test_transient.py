@@ -112,8 +112,8 @@ def test_eq(
         redshift=0.01,
         spectroscopy=Spectroscopy(
             [ 
-                test_spectrum1,
                 test_spectrum2,
+                test_spectrum1,
             ]
         ),
         photometry=Photometry(

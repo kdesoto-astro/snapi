@@ -41,7 +41,7 @@ class Filter(Observer):
         self._set_center(center)
         self._set_width(width)
         self.update()
-        self.meta_attrs = ['_instrument', '_band', '_center', '_width'] # stored as floats assuming u.AA
+        self.meta_attrs.extend(['_band', '_center', '_width']) # stored as floats assuming u.AA
 
     
     def _set_center(self, center: Any) -> None:

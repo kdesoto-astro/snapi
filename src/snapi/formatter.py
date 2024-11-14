@@ -233,3 +233,10 @@ class Formatter:
             if fig is not None:
                 item.set_fontsize(2.0 * fig.get_figwidth())
         return None
+    
+    
+    def set_aspect_ratio(self, ax: Axes, ratio: float = 1.0):
+        ratio = 1.0
+        x_left, x_right = ax.get_xlim()
+        y_low, y_high = ax.get_ylim()
+        ax.set_aspect(abs((x_right - x_left) / (y_low - y_high)) * ratio)

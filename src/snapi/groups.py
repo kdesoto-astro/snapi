@@ -1,4 +1,9 @@
 from typing import Iterable, Optional, Callable, Any
+import pandas as pd
+
+from .analysis.sampler import SamplerResult
+from .base_classes import Base
+from .formatter import Formatter
 from .transient import Transient
 
 class Group(Base):
@@ -156,7 +161,7 @@ class SamplerResultGroup(Base):
     """
     def __init__(
         self,
-        sampler_results: Optional[Iterable[SamplerResult]] = None
+        sampler_results: Optional[Iterable[SamplerResult]] = None,
         param_names: Optional[list[str]] = None
     ) -> None:
         
@@ -272,7 +277,82 @@ class SamplerResultGroup(Base):
                 combined_df = pd.concat([combined_df, df])
         
         return combined_df
-            
+    
+    def umap(self, ax, classes: Optional[pd.DataFrame] = None, formatter=Formatter()):
+        """Plot 2D UMAP of sampling features.
+        """
+        import umap
+        import umap.plot
+
+        features = self.all_samples
+        if classes:
+            classes_ordered = classes[features.index]
+        features = features.to_numpy()
         
+        # add jitter
+        for i in range(features.shape[1]):
+            features[:,i] += np.random.normal(scale=np.std(features) / 1e3, size=len(features))
+        nan_features = np.any(np.isnan(features), axis=1)
+        
+        mapper = umap.UMAP().fit(features[~nan_features], force_all_finite=False)
+        
+        if classes:
+            ax = umap.plot.points(
+                mapper,
+                labels=classes_ordered[~nan_features],
+                color_key_cmap=formatter.categorical_cmap,
+                ax=ax
+            )
+        else:
+            ax = umap.plot.points(
+                mapper,
+                cmap=formatter.cmap,
+                ax=ax
+            )
+        return ax
+
+
+    def pacmap(self, ax, classes: Optional[pd.DataFrame] = None, formatter=Formatter()):
+        """Plot 2D PACMAP of sampling features.
+        """
+        import pacmap
+        
+        features = self.all_samples
+        if classes:
+            classes_ordered = classes[features.index]
+        features = features.to_numpy()
+        
+        # add jitter
+        for i in range(features.shape[1]):
+            features[:,i] += np.random.normal(scale=np.nanstd(features) / 100, size=len(features))
+        nan_features = np.any(np.isnan(features), axis=1)
+        
+        embedding = pacmap.PaCMAP(n_components=2)
+        X_transformed = embedding.fit_transform(features[~nan_features], init="pca")
+        
+        if classes:
+            labels = classes_ordered[~nan_features]
+        else:
+            labels = np.array(["none",] * len(X_transformed))
+        for l in np.unique(labels):
+            # visualize the embedding
+            ax.scatter(
+                X_transformed[labels == l, 0],
+                X_transformed[labels == l, 1],
+                s=formatter.marker_size,
+                color=formatter.edge_color,
+                marker=formatter.marker_style,
+                alpha=0.3,
+                label=l
+            )
+            formatter.rotate_colors()
+            formatter.rotate_markers()
+            
+        formatter.reset_colors()
+        formatter.reset_markers()
+        
+        return ax
+
+
     
                 
