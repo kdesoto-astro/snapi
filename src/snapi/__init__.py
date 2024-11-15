@@ -2,7 +2,7 @@ import numpy as np  # pylint: disable
 
 from snapi.base_classes import Base, MeasurementSet, Plottable
 
-from .analysis import Sampler, SamplerResult, ClassifierResult
+from .analysis import Sampler, SamplerPrior, SamplerResult, ClassifierResult
 from .formatter import Formatter
 from .image import Image
 
@@ -27,6 +27,7 @@ __all__ = [
     "Photometry",
     "Plottable",
     "Sampler",
+    "SamplerPrior",
     "SamplerResult",
     "SamplerResultGroup",
     "Spectrometer",

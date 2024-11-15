@@ -9,6 +9,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_array, check_is_fitted
+from scipy.stats import truncnorm
 
 from ..formatter import Formatter
 from ..photometry import Photometry
@@ -27,12 +28,15 @@ class SamplerPrior(Base):
         prior_info: pd.DataFrame
     ):
         """Stores prior information for the Sampler."""
-        for k in ['mean', 'stddev', 'min', 'max', 'logged', 'relative', 'relative_op']:
+        super().__init__()
+        for k in ['param', 'mean', 'stddev', 'min', 'max', 'logged', 'relative', 'relative_op']:
             if k not in prior_info:
                 raise ValueError(f"column {k} not in prior_info!")
         self._df = prior_info
+        self._df.loc[:,'logged'] = self._df.loc[:,'logged'].astype(bool)
         self._rng = np.random.default_rng()
         self.arr_attrs.append("_df")
+        self.update()
         
     def update(self) -> None:
         """Rearrange priors so correlated priors are sampled
@@ -41,16 +45,30 @@ class SamplerPrior(Base):
         rerun = False
         while rerun:
             rerun = False
-            ordered_indices = {ind: i for i, ind in enumerate(self._df.index)}
+            ordered_indices = {p: i for i, p in enumerate(self._df['param'])}
             for r in self._df.loc[~pd.isna(self._df['relative'])]:
-                if ordered_indices[r['relative']] > ordered_indices[r.index]:
+                if ordered_indices[r['relative']] > r.index:
                     # move r to back of array
                     self._df.pop(r, inplace=True)
                     self._df.append(r, inplace=True)
                     rerun = True
                     
-        self._df['tg_a'] = (self._df['min'] - self._df['mean']) / self._df['stddev']
-        self._df['tg_b'] = (self._df['max'] - self._df['mean']) / self._df['stddev']
+        self._tga = ((self._df['min'] - self._df['mean']) / self._df['stddev']).to_numpy()
+        self._tgb = ((self._df['max'] - self._df['mean']) / self._df['stddev']).to_numpy()
+        
+        self._relative_mask = self._df['relative'].notna()
+        self._relative_idxs = []
+        
+        # get shuffled relative idxs
+        for relative_value in self._df.loc[self._relative_mask,'relative']:
+            # Find the index where the 'param' column matches the 'relative' value
+            index = self._df[self._df['param'] == relative_value].index
+            self._relative_idxs.append(index[0])  # Storing the first matching index
+            
+        # faster sample calls
+        self._logged = self._df['logged'].to_numpy()
+        self._mean = self._df['mean'].to_numpy()
+        self._std = self._df['stddev'].to_numpy()
         
     def __get__(self, key):
         """Retrieve prior info for a certain parameter."""
@@ -59,6 +77,7 @@ class SamplerPrior(Base):
     def __set__(self, key, val):
         """Change prior information for a certain parameter."""
         self._df.loc[key] = pd.Series(val)
+        self.update()
         
     @property
     def dataframe(self):
@@ -91,30 +110,28 @@ class SamplerPrior(Base):
             loc=fields['mean'], scale=fields['stddev'], low=low, high=high, validate_args=True
         )
     
-    def sample(self, cube=None, numpyro=False):
+    def sample(self, cube, numpyro=False):
         """Sample from priors. If numpyro=True, then
         use the numpyro framework.
         """
         if numpyro:
             vals = np.array([numpyro.sample(row.index, self._trunc_norm(row)) for row in self._df])
         else:
-            if cube is None:
-                cube = self._rng.uniform(size=len(self._df))
+            #if cube is None:
+            #    cube = self._rng.uniform(size=len(self._df))
+                
             vals = truncnorm.ppf(
-                cube, self._df['tg_a'], self._df['tg_b'],
-                loc=self._df['mean'],
-                scale=self._df['stddev']
+                cube, self._tga, self._tgb,
+                loc=self._mean,
+                scale=self._std
             )
             
         # log transformations
-        vals[self._df['logged']] = 10**vals[self._df['logged']]
-        
-        # relative transformations
-        vals[self._df['relative_op'] == '*'] *= self._df[self._df['relative_op'] == '*', 'relative']
-        vals[self._df['relative_op'] == '+'] += self._df[self._df['relative_op'] == '+', 'relative']
-        
-        return vals
+        vals[self._logged] = 10**vals[self._logged]
 
+        # relative transformations
+        vals[self._relative_mask] *= vals[self._relative_idxs]
+        return vals
     
 class SamplerResult(Base):
     """Stores the results of a model sampler."""
@@ -131,6 +148,7 @@ class SamplerResult(Base):
             The parameters of the fit. Array associated
             with each key must be one-dimensional.
         """
+        super().__init__()
         if isinstance(fit_parameters, dict):
             for key, value in fit_parameters.items():
                 if np.atleast_1d(value).ndim != 1:
@@ -144,8 +162,8 @@ class SamplerResult(Base):
         self._sampler_name = sampler_name
         self.score = 0.0
         
-        self.arr_attrs = ["_fit_params",]
-        self.meta_attrs = ["_sampler_name", "score"]
+        self.arr_attrs.append("_fit_params")
+        self.meta_attrs.extend(["_sampler_name", "score"])
 
     def __str__(self) -> str:
         return str(self._fit_params)

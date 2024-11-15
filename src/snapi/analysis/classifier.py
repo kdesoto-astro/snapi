@@ -8,8 +8,9 @@ class ClassifierResult(Base):
     """Stores information about a trained classifier's output on a dataset.
     Mostly a pd.DataFrame + metadata.
     """
-    def __init__(self) -> None:
+    def __init__(self, df) -> None:
         super().__init__()
+        self._df = df
         
     def generate_roc_curve(self, fig, ax, ax1, formatter=Formatter()):
         """Generate a combined ROC curve of all SN classes.
