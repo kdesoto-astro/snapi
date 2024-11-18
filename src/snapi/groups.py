@@ -134,7 +134,9 @@ class TransientGroup(Base):
         all_fns = glob.glob(
             os.path.join(dir_path, "*.h5")
         )
-        for fn in all_fns:
+        for i, fn in enumerate(all_fns):
+            if i % 100 == 0:
+                print(f"Added transient {i} out of {len(all_fns)}")
             t = Transient.load(fn)
             if (names is None) or (t.id in names):
                 if hasattr(self, t.id):
