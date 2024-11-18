@@ -3,7 +3,10 @@
 import os
 from typing import Any, Mapping, Optional, Type, TypeVar
 
+import jax.numpy as jnp
 import numpy as np
+import numpyro.distributions as dist
+import numpyro
 import pandas as pd
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -56,19 +59,25 @@ class SamplerPrior(Base):
         self._tga = ((self._df['min'] - self._df['mean']) / self._df['stddev']).to_numpy()
         self._tgb = ((self._df['max'] - self._df['mean']) / self._df['stddev']).to_numpy()
         
-        self._relative_mask = self._df['relative'].notna()
-        self._relative_idxs = []
+        self._relative_masks = {}
         
-        # get shuffled relative idxs
-        for relative_value in self._df.loc[self._relative_mask,'relative']:
-            # Find the index where the 'param' column matches the 'relative' value
-            index = self._df[self._df['param'] == relative_value].index
-            self._relative_idxs.append(index[0])  # Storing the first matching index
+        for op in ["*", "+"]:
+            rel_mask = (self._df['relative'].notna() & (self._df['relative_op'] == op)).to_numpy()
+            rel_idxs = []
+
+            # get shuffled relative idxs
+            for rel_val in self._df.loc[rel_mask, 'relative']:
+                # Find the index where the 'param' column matches the 'relative' value
+                index = self._df[self._df['param'] == rel_val].index
+                rel_idxs.append(index[0])  # Storing the first matching index
+
+            self._relative_masks[op] = (jnp.array(rel_mask), jnp.array(rel_idxs))
             
         # faster sample calls
         self._logged = self._df['logged'].to_numpy()
         self._mean = self._df['mean'].to_numpy()
         self._std = self._df['stddev'].to_numpy()
+        self._numpyro_sample_arr = self._df[['param', 'min', 'max', 'mean', 'stddev']].to_numpy()
         
     def __get__(self, key):
         """Retrieve prior info for a certain parameter."""
@@ -98,24 +107,27 @@ class SamplerPrior(Base):
             A truncated normal distribution.
         """
         if high is None:
-            high = fields['max']
+            high = fields[1]
         else:
-            high = jnp.minimum(high, fields['max'])
+            high = jnp.minimum(high, fields[1])
         if low is None:
-            low = fields['min']
+            low = fields[0]
         else:
-            low = jnp.maximum(low, fields['min'])
+            low = jnp.maximum(low, fields[0])
 
         return dist.TruncatedNormal(
-            loc=fields['mean'], scale=fields['stddev'], low=low, high=high, validate_args=True
+            loc=fields[2], scale=fields[3], low=low, high=high, validate_args=True
         )
     
-    def sample(self, cube, numpyro=False):
+    def sample(self, cube, use_numpyro=False):
         """Sample from priors. If numpyro=True, then
         use the numpyro framework.
         """
-        if numpyro:
-            vals = np.array([numpyro.sample(row.index, self._trunc_norm(row)) for row in self._df])
+        if use_numpyro:
+            vals = jnp.array([numpyro.sample(r[0], self._trunc_norm(r[1:])) for r in self._numpyro_sample_arr])
+            vals = vals.at[self._logged].set(10**vals[self._logged])
+            vals = vals.at[self._relative_masks["*"][0]].set(vals[self._relative_masks["*"][0]] * vals[self._relative_masks["*"][1]])
+            vals = vals.at[self._relative_masks["+"][0]].set(vals[self._relative_masks["+"][0]] + vals[self._relative_masks["+"][1]])
         else:
             #if cube is None:
             #    cube = self._rng.uniform(size=len(self._df))
@@ -126,19 +138,33 @@ class SamplerPrior(Base):
                 scale=self._std
             )
             
-        # log transformations
-        vals[self._logged] = 10**vals[self._logged]
+            # log transformations
+            vals[self._logged] = 10**vals[self._logged]
 
-        # relative transformations
-        vals[self._relative_mask] *= vals[self._relative_idxs]
+            # relative transformations
+            vals[self._relative_masks["*"][0]] *= vals[self._relative_masks["*"][1]]
+            vals[self._relative_masks["+"][0]] += vals[self._relative_masks["+"][1]]
         return vals
+    
+    def transform(self, samples):
+        """Transform relative and log-Gaussian samples
+        from gaussian-sampled values.
+        """
+        shuffle_idxs = [np.where(samples.columns == p)[0][0] for p in self._df['param']]
+        samples_shuffled = samples.iloc[:,shuffle_idxs] # now order matches
+        samples_shuffled.iloc[:,self._logged] = 10**samples_shuffled.iloc[:,self._logged]
+        samples_numpy = samples_shuffled.to_numpy()
+        samples_shuffled.iloc[:,np.array(self._relative_masks["+"][0])] += samples_numpy[:,np.array(self._relative_masks["+"][1])]
+        samples_shuffled.iloc[:,np.array(self._relative_masks["*"][0])] *= samples_numpy[:,np.array(self._relative_masks["*"][1])]
+        return samples_shuffled
+            
     
 class SamplerResult(Base):
     """Stores the results of a model sampler."""
 
     def __init__(
         self,
-        fit_parameters: Any,
+        fit_parameters: Any = None,
         sampler_name: Optional[str] = None,
     ):
         """
@@ -156,6 +182,8 @@ class SamplerResult(Base):
             self._fit_params = pd.DataFrame(fit_parameters)
         elif isinstance(fit_parameters, pd.DataFrame):
             self._fit_params = fit_parameters.copy()
+        elif fit_parameters is None:
+            self._fit_params = None
         else:
             raise ValueError("fit_parameters must be a dictionary or DataFrame.")
 
@@ -183,7 +211,7 @@ class SamplerResult(Base):
         """Augments fit_parameters attribute.
         Columns should stay the same.
         """
-        if fit_parameters.columns != self._fit_params.columns:
+        if (self._fit_params is not None) and (fit_parameters.columns != self._fit_params.columns):
             raise ValueError("columns must match between original and new fit_parameters")
             
         self._fit_params = fit_parameters
@@ -297,6 +325,11 @@ class Sampler(BaseEstimator):  # type: ignore
         mask = np.all(np.isfinite(X[:, 2].astype(np.float64))) & np.isfinite(y)
 
         return X[mask], y[mask]
+    
+    @property
+    def name(self) -> str:
+        """Return sampler name."""
+        return self._sampler_name
 
     def fit(
         self,
@@ -474,7 +507,7 @@ class Sampler(BaseEstimator):  # type: ignore
             formatter.rotate_markers()
         return ax
 
-    def load_result(self, load_prefix: str, load_folder: Optional[str] = None) -> None:
+    def load_result(self, load_fn: str) -> None:
         """Load a FitResult from an HDF5 file.
 
         Parameters
@@ -484,9 +517,8 @@ class Sampler(BaseEstimator):  # type: ignore
         hdf5_path : str, optional
             The path to load the fit results from in the HDF
         """
-        self.result = SamplerResult.load(
-            load_prefix=load_prefix, load_folder=load_folder, sampler_name=self._sampler_name
-        )
+        self.result = SamplerResult.load(load_fn)
+        self._is_fitted = True
 
     def _eff_variance(self, X: NDArray[np.object_]) -> NDArray[np.float64]:
         """Returns the effective variance of the model."""
