@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import dill
 from typing import TypeVar, Optional, Any
 import copy
 from matplotlib.axes import Axes
@@ -89,7 +90,12 @@ class Base(ABC):
         # Save any meta attrs
         with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
             for meta_attr in self.meta_attrs:
-                setattr(store.get_storer(path).attrs, meta_attr, getattr(self, meta_attr))
+                a = getattr(self, meta_attr)
+                try:
+                    setattr(store.get_storer(path).attrs, meta_attr, a)
+                except:
+                    a_enc = dill.dumps(self._cols)
+                    setattr(store.get_storer(path).attrs, meta_attr, a_enc)
 
         # Save associated objects
         for assoc_obj in self.associated_objects:

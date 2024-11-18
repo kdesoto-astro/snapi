@@ -1,4 +1,7 @@
 from typing import Iterable, Optional, Callable, Any
+import glob
+import os
+
 import pandas as pd
 
 from .analysis.sampler import SamplerResult
@@ -13,10 +16,14 @@ class Group(Base):
         self,
         objs: Optional[Iterable[Base]] = None
     ):
+        super().__init__()
+        
         if objs is not None:
             for t in objs:
+                if hasattr(self, "_"+t.id):
+                    continue
                 setattr(self, "_"+t.id, t) # will also check uniqueness
-                self.associated_objects.append(t.id)
+                self.associated_objects["_"+t.id] = t.__class__.__name__
             
         self.update()
         
@@ -25,26 +32,28 @@ class Group(Base):
         
         
     def update(self):
-        """Update meta-dataframe."""
-        # keep pandas df for metadata
-        self.associated_objects = sorted(self.associated_objects)
-        self._meta = pd.DataFrame(
-            [],
-            columns=self._cols
-        )
-        self._meta.index.name = 'id'
-        
+        """Update meta-dataframe."""    
+        # keep pandas df for metadata        
+        extracted_dicts = []
         for t_id in self.associated_objects:
-            extracted_dict = self._extract_meta(getattr(self, t_id))
-            self._meta.append(extracted_dict)
+            extracted_dicts.append(self._extract_meta(getattr(self, t_id)))
+            
+        if len(extracted_dicts) == 0:
+            self._meta = pd.DataFrame([], columns=['id', *self._cols.keys()])
+        else:
+            self._meta = pd.DataFrame(extracted_dicts)
+        self._meta.set_index('id', inplace=True)
+        self._meta.sort_index(inplace=True)
         
-    def __get__(self, obj_id: str):
+    def __getitem__(self, obj_id: str):
         return getattr(self, "_"+obj_id).copy()
     
-    def __set__(self, obj_id: str, obj: Base):
+    def __setitem__(self, obj_id: str, obj: Base):
         extracted_dict = self._extract_meta(obj)
         if not hasattr(self, "_"+obj_id):
-            self._meta.append(extracted_dict)
+            extracted_df = pd.DataFrame(extracted_dict)
+            extracted_df.set_index('id', inplace=True)
+            self._meta = pd.concat([self._meta, extracted_df])
             self._meta.sort_index(inplace=True)
         else:
             self._meta.loc[obj_id,:] = pd.Series(extracted_dict)
@@ -87,7 +96,7 @@ class Group(Base):
         if inplace:
             for obj_id in self.associated_objects:
                 if obj_id not in ids:
-                    attr = getattr(self, "_"+obj_id)
+                    attr = getattr(self, obj_id)
                     del attr
                     self.associated_objects.remove(obj_id)
                     
@@ -97,28 +106,30 @@ class Group(Base):
         else:
             group = self.__class__()
             for obj_id in self.associated_objects:
-                if (obj_id in ids) and hasattr(self, "_"+obj_id):
-                    group[obj_id] = getattr(self, "_"+obj_id)
+                if (obj_id in ids) and hasattr(self, obj_id):
+                    group_obj = getattr(self, "_"+obj_id)
+                    setattr(group, "_"+obj_id, group_obj) # will also check uniqueness
+                    group.associated_objects["_"+obj_id] = group_obj.__class__.__name__
+                    
+        group.update()
                     
         return group
                 
             
 
-class TransientGroup(Base):
+class TransientGroup(Group):
     """Stores information about set of transient objects, with pointers to individual objects."""
     def __init__(
         self,
         transients: Optional[Iterable[Transient]] = None,
         col_defs: Optional[dict[str, Callable]] = None
     ) -> None:
-        
-        super().__init__(transients)
             
         if col_defs is None:
             # DEFAULT COLS
             self._cols = {
-                'ra': lambda x: x.ra,
-                'dec': lambda x: x.dec,
+                'ra': lambda x: x._ra,
+                'dec': lambda x: x._dec,
                 'internal_names': lambda x: ', '.join(x.internal_names),
                 'spec_class': lambda x: x.spec_class,
                 'redshift': lambda x: x.redshift,
@@ -126,6 +137,8 @@ class TransientGroup(Base):
         else:
             self._cols = col_defs
             
+        super().__init__(transients)
+                        
     @classmethod
     def from_directory(cls, dir_path: str, names: Optional[Iterable[str]] = None):
         """Imports transient list from directory. If names is provided, only
@@ -133,17 +146,20 @@ class TransientGroup(Base):
         """
         all_fns = glob.glob(
             os.path.join(dir_path, "*.h5")
-        )
+        )[:100]
+        new_obj = cls()
         for i, fn in enumerate(all_fns):
             if i % 100 == 0:
                 print(f"Added transient {i} out of {len(all_fns)}")
             t = Transient.load(fn)
             if (names is None) or (t.id in names):
-                if hasattr(self, t.id):
+                if hasattr(new_obj, "_"+t.id):
                     continue
-                self[t.id] = t
+                setattr(new_obj, "_"+t.id, t) # will also check uniqueness
+                new_obj.associated_objects["_"+t.id] = Transient.__name__
                 
-        self.update()
+        new_obj.update()
+        return new_obj
         
     def add_binary_class(self, target_label: str, class_attr: str = 'spec_class'):
         """Convert spec_class to a binary classification
@@ -156,7 +172,7 @@ class TransientGroup(Base):
         self._cols[f"canonical_class"] = lambda x: canonicalize_func(getattr(x, class_attr))
 
         
-class SamplerResultGroup(Base):
+class SamplerResultGroup(Group):
     """Container for multiple SamplerResult objects
     that extracts + organizes metadata and performs
     group-level data augmentation.
@@ -168,7 +184,6 @@ class SamplerResultGroup(Base):
     ) -> None:
         
         super().__init__(sampler_results)
-        self._cols = {}
         if param_names is None and (sampler_results is not None):
             # union of all fits
             for sr in sampler_results:
@@ -189,17 +204,19 @@ class SamplerResultGroup(Base):
         """Imports transient list from directory. If names is provided, only
         grabs subset from within names.
         """
+        new_obj = cls()
         all_fns = glob.glob(
             os.path.join(dir_path, "*.h5")
         )
         for fn in all_fns:
             t = SamplerResult.load(fn)
-            if (names is None) or (t.id in names):
-                if hasattr(self, t.id):
-                    continue
-                self[t.id] = t
+            if hasattr(new_obj, "_"+t.id):
+                continue
+            setattr(new_obj, "_"+t.id, t) # will also check uniqueness
+            new_obj.associated_objects["_"+t.id] = SamplerResult.__name__
                 
-        self.update()
+        new_obj.update()
+        return new_obj
         
         
     def set_samples_per_event(self, num_samples: int):
@@ -271,10 +288,9 @@ class SamplerResultGroup(Base):
             df = sr.fit_parameters
             for m in meta_cols:
                 df[m] = self._meta[sr_id, m]
-            df.set_index(sr_id, inplace=True)
+            df.set_index('id', inplace=True)
             if combined_df is None:
                 combined_df = df
-                df.index.name = 'id'
             else:
                 combined_df = pd.concat([combined_df, df])
         
