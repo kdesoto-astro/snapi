@@ -10,10 +10,18 @@ from dustmaps.config import config as dustmaps_config
 from dustmaps.sfd import SFDQuery
 from numpy.typing import NDArray
 
-dustmaps_config["data_dir"] = os.path.join(
-    "/".join(os.path.dirname(__file__).split("/")[:-2]), "data", "dustmaps"
-)
-sfd = SFDQuery()
+sfd = None
+
+def set_dustmaps_path(path: Optional[str]=None):
+    """Configure path for dustmaps. If no path given,
+    use the default path for SNAPI.
+    """
+    if path is None:
+        dustmaps_config["data_dir"] = os.path.join(
+            "/".join(os.path.dirname(__file__).split("/")[:-2]), "data", "dustmaps"
+        )
+    else:
+        dustmaps_config["data_dir"] = path
 
 
 def list_datasets(hdf5_file: str) -> NDArray[np.str_]:
@@ -33,6 +41,11 @@ def list_datasets(hdf5_file: str) -> NDArray[np.str_]:
 
 def calc_mwebv(coordinates: SkyCoord) -> float:
     """Calculate the Milky Way E(B-V) at a given set of coordinates."""
+    global sfd
+    
+    if sfd is None:
+        sfd = SFDQuery()
+        
     return float(sfd(coordinates))
 
 def str_to_class(classname):

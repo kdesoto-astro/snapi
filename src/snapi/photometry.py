@@ -273,7 +273,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         """
         filts = np.atleast_1d(filts)
         filts = [str(f) for f in filts]
-        filtered_lcs = [getattr(self, filt) for filt in filts]
+        filtered_lcs = [getattr(self, filt) for filt in filts if hasattr(self, filt)]
         return self.__class__(filtered_lcs)
 
     def phase(

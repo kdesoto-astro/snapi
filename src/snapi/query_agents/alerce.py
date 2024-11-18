@@ -56,9 +56,8 @@ class ALeRCEQueryAgent(QueryAgent):
 
         if "forced_photometry" in lc:  # not available with older versions of alerce-client
             forced_detections = pd.DataFrame(list(lc["forced_photometry"])[0])
-            non_na_columns = all_detections.columns[all_detections.notna().any()]
-            non_na_columns2 = forced_detections.columns[forced_detections.notna().any()]
-            all_detections = pd.concat([all_detections[non_na_columns], forced_detections[non_na_columns2]])
+            non_na_columns = forced_detections.columns[forced_detections.notna().any()]
+            all_detections = pd.concat([all_detections, forced_detections[non_na_columns]])
 
         if "mjd" not in all_detections.columns:
             return [], False

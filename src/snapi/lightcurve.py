@@ -750,6 +750,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
                 )
 
         if len(other.non_detections) > 0:
+            nd_mask = self._ts["non_detections"]
             # update non-detections similarly
             self._ts.loc[nd_mask, :] = self._ts[nd_mask].combine_first(other.non_detections)
             nonrepeat_idxs_2 = other.non_detections.index.difference(self._ts.index)
@@ -767,6 +768,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         for col in self._ts_cols:  # ensure all original columns exist
             if col not in self._ts.columns:
                 self._ts[col] = np.nan
+                
         self.update()
 
     def pad(self: LightT, fill: dict[str, Any], n_times: int, inplace: bool = False) -> LightT:
