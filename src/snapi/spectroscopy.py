@@ -22,14 +22,27 @@ class Spectroscopy(MeasurementSet, Plottable):
         self,
         spectra: Optional[Iterable[Spectrum]] = None,
     ) -> None:
+        super().__init__()
+
+        self._spectra = []
         if spectra is None:
             spectra = []
-        self._spectra = list(spectra)
+        for spec in spectra:
+            if not isinstance(spec, Spectrum):
+                raise TypeError("All elements of 'spectra' must be a Spectrum!")
+            self.associated_objects[str(spec.spectrometer)] = Spectrum.__name__
+            setattr(self, str(spec.spectrometer), spec.copy())
+            self._spectra.append(str(spec.spectrometer))
+            
+        # order spectra 
+        self.meta_attrs.append("_spectra")
+        self.update()
+        
+    def update(self) -> None:
+        """Update the ordering of spectra. First by time, then by name."""
+        self._spectra = sorted(self._spectra, key=lambda x: (getattr(self,x).time is None, getattr(self,x).time, x))
 
-        # order spectra
-        self._spectra = sorted(self._spectra, key=lambda x: x.time if x.time is not None else np.inf)
-
-    def __len__(self):
+    def __len__(self) -> int:
         """Return number of spectra associated with this spectroscopy object."""
         return len(self._spectra)
     
@@ -43,7 +56,7 @@ class Spectroscopy(MeasurementSet, Plottable):
                 
         # assume ordered
         for s_idx, self_spec in enumerate(self._spectra):
-            if other.spectra[s_idx] != self_spec:
+            if other.spectra[s_idx] != getattr(self, self_spec):
                 return False
             
         return True
@@ -51,15 +64,16 @@ class Spectroscopy(MeasurementSet, Plottable):
     @property
     def spectra(self) -> list[Spectrum]:
         """Return list of spectra."""
-        return copy.deepcopy(self._spectra)
+        return [getattr(self, x).copy() for x in self._spectra]
 
     def grid(self, normalize: bool = False) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Return common wavelength grid and flux grid for all spectra.
         If normalize is True, normalize fluxes for each spectrum between 0 and 1."""
-        wv_arr = [spec.wavelengths for spec in self._spectra]
+        wv_arr = [getattr(self,spec).wavelengths for spec in self._spectra]
         all_wvs = np.unique(np.concatenate(wv_arr))
         interp_fluxes = np.zeros((len(self._spectra), len(all_wvs)), dtype=np.float64)
-        for i, spec in enumerate(self._spectra):
+        for i, spec_name in enumerate(self._spectra):
+            spec = getattr(self, spec_name)
             interp_fluxes[i] = np.interp(all_wvs, spec.wavelengths, spec.fluxes)
             if normalize:
                 interp_fluxes[i] = (interp_fluxes[i] - np.min(interp_fluxes[i])) / np.ptp(interp_fluxes[i])
@@ -99,7 +113,7 @@ class Spectroscopy(MeasurementSet, Plottable):
 
         for i, spec in enumerate(self._spectra[::-1]):
             if vertical_offsets:
-                spec.plot(
+                geattr(self,spec).plot(
                     ax,
                     formatter=formatter,
                     normalize=normalize,
@@ -107,14 +121,15 @@ class Spectroscopy(MeasurementSet, Plottable):
                     offset=cumul_offset[i],
                 )
             else:
-                spec.plot(ax, formatter=formatter, normalize=normalize, overlay_lines=overlay_lines)
+                geattr(self,spec).plot(ax, formatter=formatter, normalize=normalize, overlay_lines=overlay_lines)
             formatter.rotate_colors()
             formatter.rotate_markers()
 
         formatter.reset_colors()
         formatter.reset_markers()
 
-        for i, spec in enumerate(self._spectra[::-1]):
+        for i, spec_id in enumerate(self._spectra[::-1]):
+            spec = getattr(self, spec)
             if vertical_offsets and (spec.time is not None):
                 ax.annotate(
                     rf"$t={round(spec.time, 2)}$",
@@ -132,22 +147,13 @@ class Spectroscopy(MeasurementSet, Plottable):
     def add_spectrum(self, spec: Spectrum) -> None:
         """Add spectrum to the collection of spectra."""
         # Find the index where the spectrum should be inserted based on its time
-        index = len(self._spectra)
-        if spec.time is None:
-            self._spectra.append(spec)
-            return None
+        self.associated_objects[str(spec.spectrometer)] = Spectrum.__name__
+        setattr(self, str(spec.spectrometer), spec.copy())
+        self._spectra.append(str(spec.spectrometer))
 
-        for i, s in enumerate(self._spectra):
-            if s.time is not None and spec.time < s.time:
-                index = i
-                break
-            if s.time is None:
-                index = i
-                break
-        # Insert the spectrum at the determined index
-        self._spectra.insert(index, spec)
-        return None
-
-    def remove_spectrum(self, spec: Spectrum) -> None:
+    def remove_spectrum(self, spectrometer_name: str) -> None:
         """Remove spectrum from the collection of spectra."""
-        self._spectra.remove(spec)
+        if hasattr(self, spectrometer_name):
+            self._spectra.remove(spectrometer_name)
+            attr = getattr(self, spectrometer_name)
+            del attr

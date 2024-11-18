@@ -41,7 +41,7 @@ class Filter(Observer):
         self._set_center(center)
         self._set_width(width)
         self.update()
-        self.meta_attrs = ['_instrument', '_band', '_center', '_width'] # stored as floats assuming u.AA
+        self.meta_attrs.extend(['_band', '_center', '_width']) # stored as floats assuming u.AA
 
     
     def _set_center(self, center: Any) -> None:
@@ -301,6 +301,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         
         # what should be saved to LightCurve object?
         self.arr_attrs.append("_ts")
+        self.meta_attrs.append("_phased")
 
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
@@ -679,6 +680,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
 
     def add_observations(self: LightT, rows: list[dict[str, Any]]) -> None:
         """Add rows to existing timeseries."""
+        print(self._phased)
         if self._phased:
             new_times = [row["time"] for row in rows]
             new_index_td = pd.to_timedelta(new_times, "D")

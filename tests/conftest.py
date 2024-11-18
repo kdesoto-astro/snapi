@@ -18,12 +18,6 @@ from snapi.query_agents import (
 )
 
 @pytest.fixture(scope="class")
-def test_rng() -> np.random.Generator:
-    """numpy rng for all test fixtures."""
-    return np.random.default_rng()
-
-
-@pytest.fixture(scope="class")
 def data_dir() -> str:
     """Where data for tests are stored."""
     two_up = os.path.dirname(os.path.dirname(__file__))
@@ -156,81 +150,21 @@ def test_lightcurve2() -> LightCurve:
 
 
 @pytest.fixture(scope="class")
-def test_spectrum_arrs(test_rng: np.random.Generator) -> dict[str, NDArray[np.float64]]:
+def test_spectrum_arrs() -> dict[str, NDArray[np.float64]]:
     """Arrays to make test spectrum objects."""
-    return {"flux": 10.0 * test_rng.normal(size=10), "errors": np.abs(test_rng.normal(size=10))}
+    return {
+        "flux": np.linspace(5,10,num=10),
+        "errors": np.linspace(0,1,num=10)
+    }
 
 
 @pytest.fixture(scope="class")
-def test_spectrum_arrs2(test_rng: np.random.Generator) -> dict[str, NDArray[np.float64]]:
+def test_spectrum_arrs2() -> dict[str, NDArray[np.float64]]:
     """Arrays to make test spectrum objects."""
-    return {"flux": 5.0 * test_rng.normal(size=10) + 30.0, "errors": np.abs(test_rng.normal(size=10)) / 2.0}
-
-
-@pytest.fixture(scope="class")
-def test_spectrometer(test_spectrum_arrs: dict[str, NDArray[np.float64]]) -> Spectrometer:
-    """Test spectrometer fixture."""
-    return Spectrometer(
-        instrument="test_spectrometer",
-        wavelength_start=4000.0 * u.AA,  # pylint: disable=no-member
-        wavelength_delta=1.0 * u.AA,  # pylint: disable=no-member
-        num_channels=len(test_spectrum_arrs["flux"]),
-    )
-
-
-@pytest.fixture(scope="class")
-def test_spectrometer2(test_spectrum_arrs2: dict[str, NDArray[np.float64]]) -> Spectrometer:
-    """Test spectrometer fixture."""
-    return Spectrometer(
-        instrument="test_spectrometer2",
-        wavelength_start=5000.0 * u.AA,  # pylint: disable=no-member
-        wavelength_delta=2.0 * u.AA,  # pylint: disable=no-member
-        num_channels=len(test_spectrum_arrs2["flux"]),
-    )
-
-
-@pytest.fixture(scope="class")
-def test_spectrum1(
-    test_spectrum_arrs: dict[str, NDArray[np.float64]], test_spectrometer: Spectrometer
-) -> Spectrum:
-    """Test spectrum fixture."""
-    return Spectrum(
-        time=1.0 * u.day,  # pylint: disable=no-member
-        fluxes=test_spectrum_arrs["flux"],
-        errors=test_spectrum_arrs["errors"],
-        spectrometer=test_spectrometer,
-    )
-
-
-@pytest.fixture(scope="class")
-def test_spectrum2(
-    test_spectrum_arrs2: dict[str, NDArray[np.float64]], test_spectrometer2: Spectrometer
-) -> Spectrum:
-    """Test spectrum fixture."""
-    return Spectrum(
-        time=1.0 * u.day,  # pylint: disable=no-member
-        fluxes=test_spectrum_arrs2["flux"],
-        errors=test_spectrum_arrs2["errors"],
-        spectrometer=test_spectrometer2,
-    )
-
-
-@pytest.fixture(scope="class")
-def test_spectroscopy(test_spectrum1: Spectrum, test_spectrum2: Spectrum) -> Spectroscopy:
-    """Test spectroscopy fixture."""
-    return Spectroscopy([test_spectrum1, test_spectrum2])
-
-
-@pytest.fixture(scope="class")
-def test_spectrum_arrs(test_rng: np.random.Generator) -> dict[str, NDArray[np.float64]]:
-    """Arrays to make test spectrum objects."""
-    return {"flux": 10.0 * test_rng.normal(size=10), "errors": np.abs(test_rng.normal(size=10))}
-
-
-@pytest.fixture(scope="class")
-def test_spectrum_arrs2(test_rng: np.random.Generator) -> dict[str, NDArray[np.float64]]:
-    """Arrays to make test spectrum objects."""
-    return {"flux": 5.0 * test_rng.normal(size=10) + 30.0, "errors": np.abs(test_rng.normal(size=10)) / 2.0}
+    return {
+        "flux": np.linspace(5,40,num=10),
+        "errors": np.linspace(0,2,num=10)
+    }
 
 
 @pytest.fixture(scope="class")

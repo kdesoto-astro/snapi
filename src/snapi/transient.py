@@ -3,6 +3,8 @@ from typing import Any, Iterable, Optional, Type, TypeVar
 import astropy.units as u
 import h5py
 from astropy.coordinates import SkyCoord
+from astropy.units import Quantity
+
 
 from .base_classes import Base
 from .lightcurve import LightCurve
@@ -30,15 +32,21 @@ class Transient(Base):
         redshift: Optional[float] = None,
         # host: HostGalaxy = None,
     ) -> None:
+        super().__init__()
         if iid is None:
             self.id = str(id(self))
         else:
             self.id = str(iid)
 
-        if ra is None or dec is None:
-            self._coord = None
+        if isinstance(ra, Quantity):
+            self._ra = ra.to(u.deg).value # pylint: disable=no-member
+            self._dec = dec.to(u.deg).value # pylint: disable=no-member
+        elif ra is None:
+            self._ra = None
+            self._dec = None
         else:
-            self._coord = SkyCoord(ra=ra, dec=dec, frame="icrs")
+            self._ra = float(ra)
+            self._dec = float(dec)
 
         if photometry is None:
             self.photometry = Photometry()
@@ -60,6 +68,11 @@ class Transient(Base):
 
         self._choose_main_name()
         # self.host = host
+        
+        self.associated_objects['photometry'] = Photometry.__name__
+        self.associated_objects['spectroscopy'] = Spectroscopy.__name__
+        
+        self.meta_attrs.extend(['id','_ra','_dec','internal_names','spec_class','redshift'])
 
     def _choose_main_name(self) -> None:
         """Chooses the main name for the transient."""
@@ -104,10 +117,10 @@ class Transient(Base):
             if (abs(self.redshift - other.redshift)/self.redshift) > 1e-2: # 1% precision
                 return False
                         
-        if self._coord is not None:
+        if self.coordinates is not None:
             if other.coordinates is None:
                 return False
-            if self._coord.separation(other.coordinates).to(u.arcsec).value > 1.: # 1 arcsec allowance
+            if self.coordinates.separation(other.coordinates).to(u.arcsec).value > 1.: # 1 arcsec allowance
                 return False
         else:
             if other.coordinates is not None:
@@ -136,16 +149,18 @@ class Transient(Base):
             if (abs(self.redshift - other.redshift)/self.redshift) > 1e-2: # 1% precision
                 return False
             
-        if (self._coord is not None) and (other.coordinates is not None):
-            if self._coord.separation(other.coordinates).to(u.arcsec).value > 1.: # 1 arcsec allowance
+        if (self.coordinates is not None) and (other.coordinates is not None):
+            if self.coordinates.separation(other.coordinates).to(u.arcsec).value > 1.: # 1 arcsec allowance
                 return False
             
         return True
     
     @property
-    def coordinates(self) -> SkyCoord:
+    def coordinates(self) -> Optional[SkyCoord]:
         """Returns the coordinates of the transient."""
-        return self._coord
+        if (self._ra is None) or (self._dec is None):
+            return None
+        return SkyCoord(ra=self._ra * u.deg, dec=self._dec * u.deg, frame="icrs") # pylint: disable=no-member
 
     def add_lightcurve(self, lightcurve: LightCurve) -> None:
         """Adds a single light curve to photometry."""
@@ -191,56 +206,10 @@ class Transient(Base):
         if self.redshift is None:
             self.redshift = result["redshift"]
         if self.coordinates is None:
-            self._coord = result["coordinates"]
+            self._ra = result["coordinates"].ra.to(u.deg).value
+            self._dec = result["coordinates"].dec.to(u.deg).value
         if result["light_curves"] is not None:
             self.add_lightcurves(result["light_curves"])
         if result["spectra"] is not None:
             for spec in result["spectra"]:
                 self.add_spectrum(spec)
-
-    def save(self, filename: str) -> None:
-        """Save transient object to HDF5 file."""
-        with h5py.File(filename, "w") as f:  # overwrite
-            pass
-
-        self.photometry.save(filename, path="photometry")
-        self.spectroscopy.save(filename, path="spectroscopy")
-
-        with h5py.File(filename, "a") as f:
-            f.attrs["id"] = self.id
-            if self.coordinates is not None:
-                f.attrs["ra"] = self.coordinates.ra.deg
-                f.attrs["dec"] = self.coordinates.dec.deg
-            if self.redshift is not None:
-                f.attrs["redshift"] = self.redshift
-            if self.spec_class is not None:
-                f.attrs["spec_class"] = self.spec_class
-            f.attrs["internal_names"] = list(self.internal_names)
-
-    @classmethod
-    def load(cls: Type[TransientT], filename: str, archival: bool = False) -> TransientT:
-        """Load transient object from HDF5 file."""
-        photometry: Photometry = Photometry.load(filename, path="photometry", archival=archival)
-        spectroscopy: Spectroscopy = Spectroscopy.load(filename, path="spectroscopy", archival=archival)
-        with h5py.File(filename, "r") as f:
-            iid = f.attrs.get("id")
-            ra = f.attrs.get("ra")
-            if ra is not None:
-                ra = ra * u.deg  # pylint: disable=no-member
-            dec = f.attrs.get("dec")
-            if dec is not None:
-                dec = dec * u.deg  # pylint: disable=no-member
-            redshift = f.attrs.get("redshift")
-            spec_class = f.attrs.get("spec_class")
-            internal_names = set(f.attrs.get("internal_names", default=set()))
-
-        return cls(
-            ra=ra,
-            dec=dec,
-            iid=iid,
-            photometry=photometry,
-            spectroscopy=spectroscopy,
-            spec_class=spec_class,
-            redshift=redshift,
-            internal_names=internal_names,
-        )
