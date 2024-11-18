@@ -1,6 +1,6 @@
 """Helper functions for the SNAPI package."""
 import os
-from typing import Any
+from typing import Any, Optional
 import sys
 
 import h5py
