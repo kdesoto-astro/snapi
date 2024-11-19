@@ -576,6 +576,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         """
         if t0 is None:
             t0 = self._peak.index
+        print(t0)
         if periodic and (period is None):
             period = self.calculate_period()
             
