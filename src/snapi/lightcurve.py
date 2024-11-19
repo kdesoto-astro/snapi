@@ -844,7 +844,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         if inplace and not self._phased:
             self.phase()
 
-        new_times = lc.times / (1.0 + redshift)
+        new_times = self.times / (1.0 + redshift)
         shift_timedelta = pd.to_timedelta(new_times, "D")
         
         k_corr = 2.5 * np.log10(1.0 + redshift)
