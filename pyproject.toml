@@ -46,6 +46,10 @@ queries = [
     "astro_ghost",
 ]
 
+samplers = [
+    "jax",
+]
+
 dev = [
     "asv>=0.6.3", # Used to compute performance benchmarks
     "black", # Used for static linting of files
@@ -64,7 +68,8 @@ dev = [
     "sphinx-autoapi", # Used to automatically generate api documentation
     "sphinx_copybutton",
     "pylint", # Used for static linting of files
-    "snapi[queries]"
+    "snapi[queries]",
+    "snapi[samplers]"
 ]
 
 
