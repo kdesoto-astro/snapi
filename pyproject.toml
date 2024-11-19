@@ -41,7 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 queries = [
     "alerce>=1.2.0",
-    "confluent-kafka>=2.6.1",
+    "confluent-kafka>=1.7.0",
     "antares_client>=1.8.0",
     "astro_ghost",
 ]
