@@ -27,7 +27,7 @@ class Group(Base):
             
         self.update()
         
-        self.arr_attrs.append("_meta")
+        #self.arr_attrs.append("_meta")
         self.meta_attrs.append("_cols")
         
         
