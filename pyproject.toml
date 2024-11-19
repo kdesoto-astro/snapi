@@ -48,6 +48,7 @@ queries = [
 
 samplers = [
     "jax",
+    "numpyro",
 ]
 
 dev = [
