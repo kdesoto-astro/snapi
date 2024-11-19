@@ -289,8 +289,8 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
                 index=index_col,
             )
 
-        for col in self._ts_cols:
-            self._ts[col] = self._ts[col].astype(np.float64)
+        #for col in self._ts_cols:
+        #    self._ts[col] = self._ts[col].astype(np.float64)
 
         self._ts.index.name = "time"
         self._rng = np.random.default_rng()
@@ -810,34 +810,31 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
 
         return resample_helper(centers, uncs, num)  # type: ignore
 
-    def absolute(self: LightT, redshift: float) -> LightT:
+    def absolute(self: LightT, redshift: float, inplace=False) -> LightT:
         """Returns LightCurve with absolute magnitudes.
         Adjusts magnitudes and zeropoints by distance modulus
         and k-corrections.
         """
-        #z = redshift * cu.redshift
-        #d = z.to(u.Mpc, cu.redshift_distance("Planck15", kind="luminosity"))  # pylint: disable=no-member
-
-        if not self._phased:
-            #print("PHASING BY DEFAULT")
+        if inplace and not self._phased:
             self.phase()
 
-        new_times = self.times / (1.0 + redshift)
+        new_times = lc.times / (1.0 + redshift)
         shift_timedelta = pd.to_timedelta(new_times, "D")
-        """
-        # Calculate the time shift (large value in days)
-        shift_days = (redshift * d / const.c).to(u.d).value  # pylint: disable=no-member
-        new_times_jd1 = 2_400_000.5 / (1.0 + redshift) - shift_days
-        new_times_jd2 = self.times / (1.0 + redshift)
-
-        shift_timedelta = pd.to_timedelta(new_times_jd1 + new_times_jd2, "D")
-        """
-        # Reconstruct the new Time object using jd1 and jd2
-        new_ts = self._ts.copy()
-        new_ts.set_index(shift_timedelta, inplace=True)
-
+        
         k_corr = 2.5 * np.log10(1.0 + redshift)
         distmod = Planck15.distmod(redshift).value
+        
+        if inplace:
+            self._ts.set_index(shift_timedelta, inplace=True)
+            self._ts["mag"] += (-distmod + k_corr)
+            self._ts["zpt"] += (-distmod + k_corr)
+            return self._ts
+        
+        # Reconstruct the new Time object using jd1 and jd2
+        new_ts = self._ts.copy()
+        if not self._phased:
+            new_ts.phase()
+        new_ts.set_index(shift_timedelta, inplace=True)
         new_ts["mag"] += (-distmod + k_corr)
         new_ts["zpt"] += (-distmod + k_corr)
 

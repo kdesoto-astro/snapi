@@ -1,5 +1,6 @@
 """Contains TNSQueryAgent for querying transient objects from ALeRCE."""
 from typing import Any, List, Mapping
+from requests.exceptions import ChunkedEncodingError
 
 import astropy.units as u
 import numpy as np
@@ -167,7 +168,7 @@ class ALeRCEQueryAgent(QueryAgent):
                         }
                     )
                 )
-            except APIError:
+            except (ChunkedEncodingError, APIError):
                 results.append(QueryResult())
 
         return results, True

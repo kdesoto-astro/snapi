@@ -146,12 +146,16 @@ class TransientGroup(Group):
         """
         all_fns = glob.glob(
             os.path.join(dir_path, "*.h5")
-        )[:100]
+        )
         new_obj = cls()
         for i, fn in enumerate(all_fns):
             if i % 100 == 0:
                 print(f"Added transient {i} out of {len(all_fns)}")
-            t = Transient.load(fn)
+            try:
+                t = Transient.load(fn)
+            except:
+                print(f"{fn.split('/')[-1]} skipped: unable to load")
+                continue
             if (names is None) or (t.id in names):
                 if hasattr(new_obj, "_"+t.id):
                     continue

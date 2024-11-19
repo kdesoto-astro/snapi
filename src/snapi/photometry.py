@@ -277,7 +277,10 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
         return self.__class__(filtered_lcs)
 
     def phase(
-        self: PhotT, t0: Optional[float] = None, periodic: bool = False, period: Optional[float] = None
+        self: PhotT, t0: Optional[float] = None,
+        periodic: bool = False,
+        period: Optional[float] = None,
+        inplace: bool = True
     ) -> None:
         """Return new Photometry with light curves phased.
         By default phases max around 0. If periodic,
@@ -288,9 +291,20 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             period = self.calculate_period()
         if t0 is None:
             t0 = np.nanmedian([getattr(self, l).peak["time"] for l in self._lightcurves])
-        for lc in self._lightcurves:
-            getattr(self, lc).phase(t0=t0, periodic=periodic, period=period)
-        self.update()
+        
+        if inplace:
+            for lc in self._lightcurves:
+                getattr(self, lc).phase(t0=t0, periodic=periodic, period=period)
+            self.update()
+        else:
+            new_lcs = []
+            for lc in self._lightcurves:
+                new_lcs.append(
+                    getattr(self, lc).phase(t0=t0, periodic=periodic, period=period, inplace=False)
+                )
+            return self.__class__(new_lcs)
+                
+        
 
     def calculate_period(self) -> float:
         """Estimate multi-band period of light curves in set."""
@@ -582,16 +596,25 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
 
         return dense_arr
 
-    def absolute(self: PhotT, redshift: float) -> PhotT:
+    def absolute(self: PhotT, redshift: float, inplace: bool=False) -> PhotT:
         """Return new Photometry with absolute magnitudes.
         Shifts zeropoints accordingly.
         """
+        if inplace:
+            if not self._phased:
+                self.phase() # first have to phase
+            for lc in self._lightcurves:
+                getattr(self, lc).absolute(redshift, inplace=True)
+            return self
+        
         if not self._phased:
-            self.phase() # first have to phase
-        new_lcs = []
-        for lc in self._lightcurves:
-            new_lcs.append(getattr(self, lc).absolute(redshift))
-        return self.__class__(new_lcs)
+            lc_phased = [getattr(self, lc).phase(inplace=False) for x in self._lightcurves]
+        else:
+            lc_phased = [getattr(self, lc).copy() for x in self._lightcurves]
+        for lc in lc_phased:
+            lc.absolute(redshift, inplace=True)
+            
+        return self.__class__(lc_phased)
 
     def correct_extinction(
         self: PhotT, mwebv: Optional[float] = None, coordinates: Optional[Any] = None
