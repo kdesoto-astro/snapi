@@ -68,8 +68,8 @@ dev = [
     "sphinx-autoapi", # Used to automatically generate api documentation
     "sphinx_copybutton",
     "pylint", # Used for static linting of files
-    "snapi[queries]",
-    "snapi[samplers]"
+    *queries,
+    *samplers,
 ]
 
 
