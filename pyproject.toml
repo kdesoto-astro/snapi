@@ -68,7 +68,12 @@ dev = [
     "sphinx-autoapi", # Used to automatically generate api documentation
     "sphinx_copybutton",
     "pylint", # Used for static linting of files
-] + project.optional-dependencies.queries + project.optional-dependencies.samplers
+    "alerce>=1.2.0",
+    "confluent-kafka>=2.6.1",
+    "antares_client>=1.8.0",
+    "astro_ghost",
+    "jax",
+]
 
 
 [build-system]
