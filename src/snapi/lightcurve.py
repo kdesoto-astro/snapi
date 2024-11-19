@@ -540,21 +540,22 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         return ts_copy
 
     @property
-    def _peak(self) -> Any:
-        """Same as self.peak() but the time is not converted to float.
+    def _peak_idx(self) -> Any:
+        """Get idx of peak mag or flux.
         """
         if pd.isna(self._ts["flux"]).all():
             idx = (self.detections["mag"] + self.detections["mag_unc"]).idxmin()
         else:
             idx = (self.detections["flux"] - self.detections["flux_unc"]).idxmax()
-        return self.detections.loc[idx]
+        return idx
         
     @property
     def peak(self) -> Any:
         """The brightest observation in light curve.
         Return as dictionary.
         """
-        peak = self._peak.to_dict()
+        idx = self._peak_idx
+        peak_dict = self.detections.loc[idx].to_dict()
 
         if self._phased:
             peak_dict["time"] = idx.total_seconds().to_numpy() / (24 * 3600)  # type: ignore
@@ -575,8 +576,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         to be in days.
         """
         if t0 is None:
-            t0 = self._peak.index
-        print(t0)
+            t0 = self._peak_idx
         if periodic and (period is None):
             period = self.calculate_period()
             
