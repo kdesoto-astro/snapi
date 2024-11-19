@@ -401,6 +401,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
             astropy_times = Time(new_times, format="mjd")
             astropy_dt = astropy_times.to_datetime()
             self._ts.set_index(pd.DatetimeIndex(astropy_dt), inplace=True)
+        self._ts.index.name = "time"
         self._sort()
 
     @property
@@ -589,6 +590,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
                 self._ts.set_index(
                     self._ts.index - t0, inplace=True
                 )
+            self._ts.index.name = "time"
             self._phased = True
         else:
             new_ts = self._ts.copy()
@@ -852,6 +854,7 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         
         if inplace:
             self._ts.set_index(shift_timedelta, inplace=True)
+            self._ts.index.name = "time"
             self._ts["mag"] += (-distmod + k_corr)
             self._ts["zpt"] += (-distmod + k_corr)
             return self._ts
