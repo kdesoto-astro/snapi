@@ -18,6 +18,7 @@ requires-python = ">=3.9"
 dependencies = [
     'astropy',
     'colorcet',
+    'dill',
     'dustmaps',
     'extinction',
     'george',
@@ -38,8 +39,15 @@ dependencies = [
 
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
+queries = [
+    "alerce>=1.2.0",
+    "confluent-kafka>=2.6.1",
+    "antares_client>=1.8.0",
+    "astro_ghost",
+]
+
 dev = [
-    "asv==0.6.3", # Used to compute performance benchmarks
+    "asv>=0.6.3", # Used to compute performance benchmarks
     "black", # Used for static linting of files
     "jupyter", # Clears output from Jupyter notebooks
     "mypy", # Used for static type checking of files
@@ -56,12 +64,9 @@ dev = [
     "sphinx-autoapi", # Used to automatically generate api documentation
     "sphinx_copybutton",
     "pylint", # Used for static linting of files
+    "snapi[queries]"
 ]
-queries = [
-    "alerce>=1.2.0",
-    "antares_client>=1.8.0",
-    "astro_ghost",
-]
+
 
 [build-system]
 requires = [
