@@ -608,9 +608,9 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             return self
         
         if not self._phased:
-            lc_phased = [getattr(self, lc).phase(inplace=False) for x in self._lightcurves]
+            lc_phased = [getattr(self, x).phase(inplace=False) for x in self._lightcurves]
         else:
-            lc_phased = [getattr(self, lc).copy() for x in self._lightcurves]
+            lc_phased = [getattr(self, x).copy() for x in self._lightcurves]
         for lc in lc_phased:
             lc.absolute(redshift, inplace=True)
             
