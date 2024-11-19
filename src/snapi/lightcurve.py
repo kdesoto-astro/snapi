@@ -540,45 +540,71 @@ class LightCurve(Measurement, Plottable):  # pylint: disable=too-many-public-met
         return ts_copy
 
     @property
-    def peak(self) -> Any:
-        """The brightest observation in light curve.
-        Return as dictionary.
+    def _peak(self) -> Any:
+        """Same as self.peak() but the time is not converted to float.
         """
         if pd.isna(self._ts["flux"]).all():
             idx = (self.detections["mag"] + self.detections["mag_unc"]).idxmin()
         else:
             idx = (self.detections["flux"] - self.detections["flux_unc"]).idxmax()
         peak_dict = self.detections.loc[idx].to_dict()
+        return peak_dict
+        
+    @property
+    def peak(self) -> Any:
+        """The brightest observation in light curve.
+        Return as dictionary.
+        """
+        peak = self._peak
 
         if self._phased:
-            peak_dict["time"] = idx.days  # type: ignore
+            peak_dict["time"] = idx.total_seconds().to_numpy() / (24 * 3600)  # type: ignore
         else:
             astropy_time = Time(idx)  # Convert to astropy Time
             peak_dict["time"] = astropy_time.mjd
         return peak_dict
 
     def phase(
-        self, t0: Optional[float] = None, periodic: bool = False, period: Optional[float] = None
+        self,
+        t0: Optional[float] = None,
+        periodic: bool = False,
+        period: Optional[float] = None,
+        inplace: bool = True
     ) -> None:
         """
         Phases light curve by t0, which is assumed
         to be in days.
         """
         if t0 is None:
-            t0 = self.peak["time"]
-        
-        if self._phased:
-            t0_datetime = np.timedelta64(int(t0 * 24 * 60 * 60 * 1e9), "ns")
+            t0 = self._peak["time"]
+        if periodic and (period is None):
+            period = self.calculate_period()
+            
+        if inplace:
+            if periodic:
+                self._ts.set_index(
+                    (self._ts.index - t0) % period, inplace=True
+                )
+            else:
+                self._ts.set_index(
+                    self._ts.index - t0, inplace=True
+                )
+            self._phased = True
         else:
-            t0_datetime = Time(t0, format="mjd").to_datetime()
-        self._ts.set_index(
-            self._ts.index - t0_datetime, inplace=True
-        )
-        if periodic:
-            if period is None:
-                period = self.calculate_period()
-            self._ts.set_index(self._ts.index % period, inplace=True)
-        self._phased = True
+            new_ts = self._ts.copy()
+            if periodic:
+                new_ts.set_index(
+                    (self._ts.index - t0) % period, inplace=True
+                )
+            else:
+                new_ts.set_index(
+                    self._ts.index - t0, inplace=True
+                )
+            return LightCurve(
+                new_ts,
+                filt=self._filter,
+                phased=True
+            )
 
     def calculate_period(self) -> float:
         """Calculate period of light curve.
