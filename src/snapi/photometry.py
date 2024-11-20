@@ -1,7 +1,7 @@
 """Stores Photometry class and helper functions."""
 import copy
 from typing import Any, Optional, Tuple, Type, TypeVar
-
+import time
 import george
 import numpy as np
 import pandas as pd
@@ -64,6 +64,7 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
     """Contains collection of LightCurve objects."""
 
     def __init__(self, lcs: Optional[list[LightCurve]] = None) -> None:
+        t1 = time.time()
         super().__init__()
         self._lightcurves: list[str] = []
         if lcs is None:
@@ -101,11 +102,14 @@ class Photometry(MeasurementSet, Plottable):  # pylint: disable=too-many-public-
             },
             index=pd.DatetimeIndex([]),
         )
+        print("phot init", time.time() - t1)
         self.update()
         
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
+        t1 = time.time()
         self._generate_time_series()
+        print("phot update time", time.time() - t1)
 
     def _generate_time_series(self) -> None:
         """Generate time series from set of light curves."""
