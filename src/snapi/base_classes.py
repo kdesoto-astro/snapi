@@ -75,12 +75,6 @@ class Base(ABC):
         # Save DataFrame and attributes to HDF5
         with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
             store.put(path, pd.Series([]))
-            # first store info on array + meta attrs and assoc. objects
-            #store.put(path + "/arr_attrs", pd.Series(self.arr_attrs))
-            #store.put(path + "/meta_attrs", pd.Series(self.meta_attrs))
-            
-            #store.put(path + "/assoc_keys", pd.Series(obj_keys))
-            #store.put(path + "/assoc_types", pd.Series(obj_values))
                     
             for arr_attr in self.arr_attrs:
                 attr = getattr(self, arr_attr)
@@ -103,7 +97,9 @@ class Base(ABC):
             # store attributes
             setattr(attrs, 'arr_attrs', self.arr_attrs)
             setattr(attrs, 'meta_attrs', self.meta_attrs)
+            print("SETTING ASSOC_KEYS", obj_keys)
             setattr(attrs, 'assoc_keys', obj_keys)
+            print("SETTING ASSOC_TYPES", obj_values)
             setattr(attrs, 'assoc_types', obj_values)
             
 
@@ -120,9 +116,7 @@ class Base(ABC):
         """Load LightCurve from saved HDF5 table. Automatically
         extracts feature information.
         """
-        t0 = time.time()
         new_obj = cls()
-        t1 = time.time()
 
         if path is None:
             path = "/" + cls.__name__
@@ -134,7 +128,6 @@ class Base(ABC):
         
         
         with pd.HDFStore(file_name) as store:
-            t2 = time.time()
             # unload attributes first
             attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
             
@@ -148,18 +141,15 @@ class Base(ABC):
             # extract meta values
             for a_key in new_obj.meta_attrs:
                 setattr(new_obj, a_key, attr_dict[a_key])
-            t3 = time.time()
             for attr_name in new_obj.arr_attrs: # array attribute
                 attr = store[f"{path}/{attr_name}"]
                 if isinstance(attr, pd.DataFrame):
                     setattr(new_obj, attr_name, attr)
                 else:
                     setattr(new_obj, attr_name, attr.to_numpy())
-            t4 = time.time()
             for attr_name in new_obj.associated_objects: # associated object load
                 subtype = str_to_class(new_obj.associated_objects[attr_name])
                 setattr(new_obj, attr_name, subtype.load(file_name, f"{path}/{attr_name}"))
-            t_upd = time.time()
             new_obj.update()
             
             return new_obj

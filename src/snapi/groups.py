@@ -95,7 +95,7 @@ class Group(Base):
         """
         if inplace:
             for obj_id in self.associated_objects:
-                if obj_id not in ids:
+                if obj_id[1:] not in ids:
                     attr = getattr(self, obj_id)
                     del attr
                     self.associated_objects.remove(obj_id)
@@ -161,7 +161,7 @@ class TransientGroup(Group):
                     continue
                 setattr(new_obj, "_"+t.id, t) # will also check uniqueness
                 new_obj.associated_objects["_"+t.id] = Transient.__name__
-                
+                                
         new_obj.update()
         return new_obj
         
