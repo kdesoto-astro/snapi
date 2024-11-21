@@ -112,7 +112,6 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         List[LightCurve]
         the set of light curves
         """
-        print(self._unique_filters, self._ts['filter'])
         return [self._construct_lightcurve_single(filt) for filt in self._unique_filters]
 
     def filter_by_instrument(self: PhotT, instrument: str, inplace: bool=False) -> PhotT:
@@ -219,7 +218,6 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         if formatter is None:
             formatter = Formatter()  # make default formatter
         
-        print("PLOTTING NOW")
         for lc in self.light_curves:
             lc.plot(ax, formatter=formatter, mags=mags)
             formatter.rotate_colors()

@@ -83,7 +83,10 @@ class Transient(Base):
     def __len__(self) -> int:
         """Returns the number of observations associated with
         the transient (both photometric and spectroscopic)."""
-        return len(self.photometry) + len(self.spectroscopy)
+        len_phot = 0 if not self.photometry else len(self.photometry)
+        len_spec = 0 if not self.spectroscopy else len(self.spectroscopy)
+        
+        return len_phot + len_spec
     
     def __eq__(self, other: object) -> bool:
         """Return True if there is a shared name
@@ -173,7 +176,7 @@ class Transient(Base):
         
     @property
     def spectroscopy(self) -> Spectroscopy:
-        return self._spectroscpy
+        return self._spectroscopy
     
     @spectroscopy.setter
     def spectroscopy(self, spectroscopy) -> None:

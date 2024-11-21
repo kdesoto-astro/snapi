@@ -219,12 +219,10 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
 
         If mags is True, plot magnitudes. If not, plot fluxes.
         """
-        print("PLOT LC")
         if formatter is None:
             formatter = Formatter()
 
         times = self._mjd
-        print(self._ts)
 
         if self._phased:
             ax.set_xlabel("Phase (days)")
@@ -240,8 +238,6 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             val_errs = self._ts["flux_error"].to_numpy()
             ax.set_ylabel("Flux")
             
-        print(vals, val_errs)
-
         ax.errorbar(
             times[~self._ts['upper_limit']],
             vals[~self._ts['upper_limit']],
@@ -430,6 +426,8 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             times = self.phase(inplace=False).times
         else:
             times = self._mjd
+            
+        print(times)
 
         new_times = times / (1.0 + redshift)
         shift_timedelta = pd.to_timedelta(new_times, "D")
