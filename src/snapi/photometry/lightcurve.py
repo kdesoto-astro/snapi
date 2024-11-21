@@ -409,11 +409,11 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         if num < 0:
             raise ValueError("num must be a non-negative integer.")
         if mags:
-            centers = self._ts["mag"]
-            uncs = self._ts["mag_error"]
+            centers = self.detections["mag"]
+            uncs = self.detections["mag_error"]
         else:
-            centers = self._ts["flux"]
-            uncs = self._ts["flux_error"]
+            centers = self.detections["flux"]
+            uncs = self.detections["flux_error"]
 
         return resample_helper(centers, uncs, num)  # type: ignore
 
