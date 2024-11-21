@@ -163,14 +163,14 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
     def _peak_idx(self):
         """Return index associated with peak. Take peak as median of each filter's peak.
         """
-        if pd.isna(self.detections['flux']).all():
-            peaks = self.detections.groupby("filter", group_keys=False).apply(
-                lambda x: (x["mag"] + x["mag_error"]).idxmin()
-            )
+        #if pd.isna(self.detections['flux']).all():
         peaks = self.detections.groupby("filter", group_keys=False).apply(
-            lambda x: (x["flux"] - x["flux_error"]).idxmax()
+            lambda x: (x["mag"] + x["mag_error"]).idxmin()
         )
-        print(peaks, peaks.median())
+        print(peaks)
+        #peaks = self.detections.groupby("filter", group_keys=False).apply(
+        #    lambda x: (x["flux"] - x["flux_error"]).idxmax()
+        #)
         return peaks.median()
 
     def calculate_period(self) -> float:
