@@ -19,7 +19,7 @@ class Base(ABC):
     """
 
     @abstractmethod
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         self._id: str = ""
         self.associated_objects: dict[str, object] = {}
         self.arr_attrs: list[str] = []
@@ -164,24 +164,17 @@ class Measurement(Base):
     """Base class for storing single measurement
     modality, such as a spectrum or light curve."""
 
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__()
-
-class MeasurementSet(Base):
-    """Base class for storing collection
-    of measurements, potentially from different
-    instruments and taken at different times.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-
-    @abstractmethod
-    def filter_by_instrument(self: MeasT, instrument: str) -> MeasT:
-        """Return MeasurementSet with only measurements
-        from instrument named 'instrument.'
-        """
-        pass
+        
+    def _validate_observer(self, observer):
+        """Validate associated observer."""
+        print(type(observer))
+        if (observer is not None) and (not isinstance(observer, Observer)):
+            raise TypeError("filt must be None or an Observer subclass object!")
+        self._observer = observer
+        if observer is not None:
+            self.associated_objects['_observer'] = observer.__class__.__name__
 
 
 class Observer(Base):

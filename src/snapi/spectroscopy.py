@@ -5,14 +5,14 @@ import numpy as np
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
-from .base_classes import MeasurementSet, Plottable
+from .base_classes import Plottable
 from .formatter import Formatter
 from .spectrum import Spectrum
 
 SpecT = TypeVar("SpecT", bound="Spectroscopy")
 
 
-class Spectroscopy(MeasurementSet, Plottable):
+class Spectroscopy(Plottable):
     """Class for Spectroscopy, which includes a collection
     of individual Spectrum objects. Usually associated with
     a Transient or HostGalaxy object.

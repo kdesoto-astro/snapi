@@ -7,8 +7,7 @@ from astropy.units import Quantity
 
 
 from .base_classes import Base
-from .lightcurve import LightCurve
-from .photometry import Photometry
+from .photometry import Photometry, LightCurve
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
 

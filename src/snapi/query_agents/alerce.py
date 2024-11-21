@@ -10,7 +10,7 @@ from alerce.exceptions import APIError  # pylint: disable=import-error
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-from ..lightcurve import Filter, LightCurve
+from ..photometry import Filter, LightCurve
 from .query_agent import QueryAgent
 from .query_result import QueryResult
 

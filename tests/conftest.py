@@ -115,14 +115,14 @@ def sample_filt() -> Filter:
 
 @pytest.fixture(scope="class")
 def fill_dict() -> dict[str, Any]:
-    return {"time": pd.to_timedelta(1000.0, "D"), "non_detections": True, "mags": 28.0}
+    return {"phase": pd.to_timedelta(1000.0, "D"), "non_detections": True, "mags": 28.0}
 
 
 @pytest.fixture(scope="class")
 def test_lightcurve1(sample_arrs: dict[str, NDArray[Any]], sample_filt: Filter) -> LightCurve:
     """Test lightcurve fixture."""
-    return LightCurve(
-        times=sample_arrs["time"],
+    return LightCurve.from_arrays(
+        phase=sample_arrs["time"],
         mags=sample_arrs["mag"],
         mag_errs=sample_arrs["mag_unc"],
         zpts=sample_arrs["zpt"],
@@ -139,8 +139,8 @@ def test_lightcurve2() -> LightCurve:
         instrument="ZTF",
         center=6173.23 * u.AA,  # pylint: disable=no-member
     )
-    return LightCurve(
-        times=[0.0, 3.0, 2.5, 4.0],
+    return LightCurve.from_arrays(
+        phase=[0.0, 3.0, 2.5, 4.0],
         mags=[21, 20, 20, 20],
         mag_errs=[0.3, 0.1, 0.2, 0.5],
         zpts=[25.0, 25.0, 25.0, 25.0],
@@ -226,7 +226,7 @@ def test_photometry(
     test_lightcurve1: LightCurve, test_lightcurve2: LightCurve
 ) -> Photometry:  # pylint: disable=redefined-outer-name
     """Test photometry fixture."""
-    return Photometry(lcs=[test_lightcurve1, test_lightcurve2])
+    return Photometry.from_light_curves([test_lightcurve1, test_lightcurve2])
 
 
 @pytest.fixture(scope="class")
@@ -305,8 +305,9 @@ def lightcurve_class_setup(  # pylint: disable=too-many-positional-arguments
     request.cls.lc = test_lightcurve1
     request.cls.other_overlap = test_lightcurve2  # t = 3 in both
     request.cls.other_no_overlap = LightCurve(
-        times=request.cls.other_overlap.detections[request.cls.other_overlap.times != 3.0],
+        request.cls.other_overlap.detections[request.cls.other_overlap.times != 3.0],
         filt=request.cls.other_overlap.filter,
+        phased=True
     )
     request.cls.coord = test_coordinate
     request.cls.save_fn = os.path.join(data_dir, "test_lc_save.h5")
