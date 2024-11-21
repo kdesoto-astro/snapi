@@ -163,7 +163,7 @@ class Transient(Base):
 
     def add_lightcurve(self, lightcurve: LightCurve) -> None:
         """Adds a single light curve to photometry."""
-        self.photometry.add_lightcurve(lightcurve)
+        self.photometry.add_lightcurve(lightcurve, inplace=True)
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:
         """Adds a set of light curves to the

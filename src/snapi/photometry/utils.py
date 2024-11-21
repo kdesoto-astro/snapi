@@ -4,6 +4,8 @@ import george
 import numba
 import numpy as np
 from numpy.typing import NDArray
+import scipy
+
 
 T = TypeVar("T", int, float, np.float64)
 

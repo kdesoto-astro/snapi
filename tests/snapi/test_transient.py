@@ -116,7 +116,7 @@ def test_eq(
                 test_spectrum1,
             ]
         ),
-        photometry=Photometry(
+        photometry=Photometry.from_light_curves(
             [
                 test_lightcurve2,
                 test_lightcurve1,

@@ -32,11 +32,15 @@ class TimeSeries(Base):
         self._flip_name_map()
         self._phased = phased
         if time_series is None: # initialize empty
+            if self._phased:
+                index = pd.to_timedelta([], "D")
+            else:
+                index = pd.DatetimeIndex([], dtype='datetime64[ns]', freq=None)
             self._ts = pd.DataFrame(
                 {
                     x[0]: np.array([], dtype=x[1]) for x in self._ts_cols.items()
                 },
-                index=pd.to_datetime([])
+                index=index
             )
         elif isinstance(time_series, pd.DataFrame):
             if validate:
@@ -72,10 +76,10 @@ class TimeSeries(Base):
             else:
                 self._ts = time_series.copy()
         else:
-            raise ValueError("Invalid data type for time_series. Must be None or pd.DataFrame")
+            raise TypeError("Invalid data type for time_series. Must be None or pd.DataFrame")
 
         if validate:
-            self._ts.index.name = "mjd" if self._phased else "phase"
+            self._ts.index.name = "phase" if self._phased else "mjd"
             self.update()
         
         self._rng = np.random.default_rng()
@@ -119,6 +123,8 @@ class TimeSeries(Base):
     @property
     def _mjd(self) -> NDArray[np.float64]:
         """Convert time (index) column to MJDs, in float."""
+        if len(self._ts) == 0:
+            return np.array([])
         if self._phased:
             return self._ts.index.total_seconds().to_numpy() / (24 * 3600)  # type: ignore
         astropy_time = Time(self._ts.index)  # Convert to astropy Time

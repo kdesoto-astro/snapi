@@ -146,7 +146,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, LightCurve):
+        if not isinstance(other, self.__class__):
             return False
         
         return (

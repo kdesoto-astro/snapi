@@ -34,7 +34,7 @@ class TestPhotometryInit:
 
     def test_init_with_lcs(self, test_lightcurve1: LightCurve, test_lightcurve2: LightCurve) -> None:
         """Test initialization with light curves."""
-        phot = Photometry([test_lightcurve1, test_lightcurve2])
+        phot = Photometry.from_light_curves([test_lightcurve1, test_lightcurve2])
         assert len(phot.light_curves) == 2
         for lc in phot.light_curves:
             assert len(lc) == 4
@@ -60,18 +60,18 @@ def test_filter_by_instrument(test_photometry: Photometry, test_lightcurve1: Lig
         instrument="PS1", band="r", center=5000.0 * u.AA  # pylint: disable=no-member
     )
 
-    new_phot = Photometry([test_lightcurve1, test_lightcurve_ps1])
+    new_phot = Photometry.from_light_curves([test_lightcurve1, test_lightcurve_ps1])
     filtered_phot_partial = new_phot.filter_by_instrument("ZTF")
     assert len(filtered_phot_partial) == 1
 
 
 def test_filter(test_photometry: Photometry, sample_filt: Filter) -> None:
     """Test the filter() function."""
-    filtered_phot = test_photometry.filter(sample_filt)
+    filtered_phot = test_photometry.filter_subset(sample_filt)
     assert len(filtered_phot) == 1
 
     # can also filter by string
-    filtered_phot2 = test_photometry.filter("ZTF_r")
+    filtered_phot2 = test_photometry.filter_subset("ZTF_r")
     assert len(filtered_phot2) == 1
 
 
@@ -155,7 +155,7 @@ def test_len(test_photometry: Photometry) -> None:
 def test_eq(test_photometry: Photometry, test_lightcurve1: LightCurve, test_lightcurve2: LightCurve) -> None:
     """Tests __eq__ function of photometry."""
     assert test_photometry.copy() == test_photometry
-    assert Photometry([test_lightcurve2, test_lightcurve1]) == test_photometry
+    assert Photometry.from_light_curves([test_lightcurve2, test_lightcurve1]) == test_photometry
 
 
 def test_dense_array(test_photometry: Photometry) -> None:
@@ -184,7 +184,7 @@ def test_correct_extinction(test_photometry: Photometry) -> None:
     mwebv2 = 1.0
     corrected_phot = test_photometry.correct_extinction(mwebv=mwebv2)
     assert (corrected_phot.mags < test_photometry.mags).all()
-    assert np.allclose(corrected_phot.fluxes, test_photometry.fluxes)  # photon counts the same
+    assert (corrected_phot.fluxes > test_photometry.fluxes).all()
 
 
 class TestSaveLoad:

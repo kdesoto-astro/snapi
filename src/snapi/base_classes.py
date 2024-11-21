@@ -169,7 +169,6 @@ class Measurement(Base):
         
     def _validate_observer(self, observer):
         """Validate associated observer."""
-        print(type(observer))
         if (observer is not None) and (not isinstance(observer, Observer)):
             raise TypeError("filt must be None or an Observer subclass object!")
         self._observer = observer

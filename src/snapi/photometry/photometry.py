@@ -4,7 +4,6 @@ from typing import Any, Optional, Tuple, Type, TypeVar
 import time
 import numpy as np
 import pandas as pd
-import scipy
 from astropy.time import Time
 from astropy.timeseries import LombScargleMultiband
 from matplotlib.axes import Axes
@@ -13,6 +12,7 @@ from numpy.typing import NDArray
 from ..formatter import Formatter
 from .lightcurve import LightCurve
 from .filter import Filter
+from .utils import generate_gp
 
 PhotT = TypeVar("PhotT", bound="Photometry")
 
@@ -38,6 +38,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         time_series: Optional[pd.DataFrame] = None,
         phased: bool = False,
         validate: bool = True,
+        filt: Any = None
     ) -> None:
         
         super().__init__(time_series, phased=phased, filt=None, validate=validate)
@@ -54,7 +55,8 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
     
     def _sort(self):
         """Sort light curve by time."""
-        self._ts.sort_index(inplace=True)
+        self._ts.sort_values(by=[self._ts.index.name, "filter"], inplace=True)
+        self._ts.sort_index(axis=1, inplace=True)
     
     @classmethod
     def from_light_curves(cls, lcs: list[LightCurve], phased: Optional[bool] = None):
@@ -78,8 +80,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
         self._unique_filters = self._ts["filter"].unique()
-        print(self._unique_filters)
-        print(self._ts["filter"])
+        self._sort()
     
     def _filter_single(self, filter_name: str) -> pd.DataFrame:
         """Return photometry for a single filter."""
@@ -88,13 +89,13 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
     def _construct_lightcurve_single(self, filter_name: str) -> LightCurve:
         """From filter name, reconstruct the light curve for that filter."""
         df_filter = self._filter_single(filter_name)
-        filt_name = df_filter['filter'][0]
+        filt_name = df_filter['filter'].iloc[0]
         filt_instrument, filt_band = filt_name.split("_")
         filt = Filter(
             instrument=filt_instrument,
             band=filt_band,
-            center=df_filter['filt_center'][0],
-            width=df_filter['filt_width'][0]
+            center=df_filter['filt_center'].iloc[0],
+            width=df_filter['filt_width'].iloc[0]
         )
         return LightCurve(
             df_filter,
@@ -132,16 +133,17 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         """
         matched_filts = [x for x in self._unique_filters if x.split("_")[0] == instrument]
         if inplace:
-            self._ts = self._ts[~self._ts['filter'].isin(matched_filts)]
+            self._ts = self._ts[self._ts['filter'].isin(matched_filts)]
             self._unique_filters = matched_filts
             return self
+        
         return self.__class__(
-            self._ts[~self._ts['filter'].isin(matched_filts)],
+            self._ts.loc[self._ts['filter'].isin(matched_filts)],
             phased=self._phased,
             validate=False
         )
 
-    def filter(self: PhotT, filts: Any, inplace: bool=False) -> PhotT:
+    def filter_subset(self: PhotT, filts: Any, inplace: bool=False) -> PhotT:
         """Return new Photometry with only light curves
         from filters in 'filts.'
         """
@@ -154,7 +156,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         
         filtered_df = self._ts.loc[self._ts['filter'].isin(filts)]
         return self.__class__(
-            pd.concat(filtered_df, copy=False),
+            filtered_df,
             phased = self._phased,
             validate=False
         )
@@ -163,11 +165,14 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
     def _peak_idx(self):
         """Return index associated with peak. Take peak as median of each filter's peak.
         """
-        print(self.detections.groupby("filter").apply(lambda x: x["mag"] + x["mag_error"]))
-        print(self.detections.groupby("filter"))
         if pd.isna(self.detections['flux']).all():
-            return self.detections.groupby("filter").apply(lambda x: x["mag"] + x["mag_error"]).idxmin()
-        return self.detections.groupby("filter ").apply(lambda x: x["flux"] - x["flux_error"]).idxmax()
+            peaks = self.detections.groupby("filter", group_keys=False).apply(
+                lambda x: (x["mag"] + x["mag_error"]).idxmin()
+            )
+        peaks = self.detections.groupby("filter", group_keys=False).apply(
+            lambda x: (x["flux"] - x["flux_error"]).idxmax()
+        )
+        return peaks.median()
 
     def calculate_period(self) -> float:
         """Estimate multi-band period of light curves in set."""
@@ -233,7 +238,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         light_curve: LightCurve
             the light curve to add to the set of photometry
         """
-        if self._phased is None:
+        if len(self._ts) == 0:
             self._phased = light_curve.is_phased
         if self._phased and not light_curve.is_phased:
             raise ValueError("light_curve must be phased before adding to phased photometry.")
@@ -266,18 +271,19 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
                     new_phot.update()
                     return new_phot
         
+        new_ts = pd.concat(
+            [self._ts, light_curve.full_time_series],
+            copy=False
+        )
+        new_ts.index.name = "phase" if self._phased else "mjd"
+        
         if inplace:
-            self._ts = pd.concat(
-                [self._ts, lc.full_time_series], copy=False
-            )
+            self._ts = new_ts
             self.update()
             return None
         
         phot = self.__class__(
-            pd.concat(
-                [self._ts, lc.full_time_series],
-                copy=False
-            ),
+            new_ts,
             phased = self._phased,
             validate = False
         )
@@ -362,7 +368,6 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         gp_df: pd.DataFrame,
         stacked_data: NDArray[np.float64],
         max_spacing: float,
-        filt_to_int: dict[str, int],
         max_n: int=64
     ) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Helper function for dense_array method."""
@@ -377,28 +382,26 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         gp_df['idx_map'] = np.cumsum(idx_map) - 1  # [0, 0, 1]
         
         gp_df_keep = gp_df.loc[gp_df['idx_map'] < max_n]
+        dense_times = gp_df['time'].iloc[keep_idxs[:max_n]]
+
         stacked_data_keep = stacked_data[idx_map < max_n]
         
         gaussian_process = generate_gp(gp_df_keep['val'].to_numpy(), gp_df_keep['err'].to_numpy(), stacked_data_keep)
         
-        filt_to_int = {filt: i for i, filt in enumerate(np.unique(gp_df_keep['filter']))}
-        filts_as_ints = np.array([filt_to_int[filt] for filt in gp_df_keep['filter']])  # TODO: more efficient?
-        gp_df_keep['filter'] = filts_as_ints
-        
-        nfilts = len(filt_to_int)
-        x_pred = np.zeros((len(gp_df_keep) * nfilts, 2))
+        nfilts = len(np.unique(gp_df_keep['filter']))
+        x_pred = np.zeros((len(dense_times) * nfilts, 2))
 
         for j in np.arange(nfilts):
-            x_pred[j::nfilts, 0] = gp_df_keep["time"].to_numpy()
+            x_pred[j::nfilts, 0] = dense_times
             x_pred[j::nfilts, 1] = j
 
         pred, pred_var = gaussian_process.predict(gp_df_keep['val'].to_numpy(), x_pred, return_var=True)
 
-        dense_arr = np.zeros((nfilts, len(gp_df_keep), 6), dtype=np.float64)
-        dense_arr[:, :, 0] = gp_df_keep["time"].to_numpy()
+        dense_arr = np.zeros((nfilts, len(dense_times), 6), dtype=np.float64)
+        dense_arr[:, :, 0] = dense_times
         dense_arr[:, :, 3] = 1  # interpolated mask
 
-        for filt_int in filt_to_int.values():
+        for filt_int in np.unique(gp_df_keep['filter']):
             dense_arr[filt_int, :, 1] = pred[x_pred[:, 1] == filt_int]
             dense_arr[filt_int, :, 2] = np.sqrt(pred_var[x_pred[:, 1] == filt_int])
 
@@ -413,12 +416,12 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
 
         # Iterate over each column and update the mask
         if use_fluxes:
-            nan_mask = self.detections.loc[:,["flux", "flux_error"]].notna().all()
+            nan_mask = self.detections.loc[:,["flux", "flux_error"]].notna().all(axis=1)
             gp_ts = self.detections.loc[nan_mask, ['flux', 'flux_error', 'filter', 'filt_center', 'filt_width']]
             gp_ts.rename(columns={'flux': 'val', 'flux_error': 'err'}, inplace=True)
             corr = 0.
         else:
-            nan_mask = self.detections.loc[:,["mag", "mag_error"]].notna().all()
+            nan_mask = self.detections.loc[:,["mag", "mag_error"]].notna().all(axis=1)
             gp_ts = self.detections.loc[nan_mask, ['mag', 'mag_error', 'filter', 'filt_center', 'filt_width']]
             gp_ts.rename(columns={'mag': 'val', 'mag_error': 'err'}, inplace=True)
             corr = gp_ts['val'].max() + 3.0 * gp_ts['err'].max()
@@ -428,6 +431,10 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
             gp_ts['time'] = gp_ts.index.total_seconds().to_numpy() / (24 * 3600)  # type: ignore
         else:
             gp_ts['time'] = Time(gp_ts.index).mjd  # Convert to astropy Time
+            
+        filt_to_int = {filt: i for i, filt in enumerate(np.unique(gp_ts['filter']))}
+        filts_as_ints = np.array([filt_to_int[filt] for filt in gp_ts['filter']])  # TODO: more efficient?
+        gp_ts['filter'] = filts_as_ints
             
         return gp_ts, corr
 
@@ -451,20 +458,20 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
 
         # map unique filts to integer
 
-        stacked_data = np.vstack([gp_df['time'], filts_as_ints]).T
+        stacked_data = np.vstack([gp_df['time'], gp_df['filter']]).T
 
         dense_arr, gp_df_keep = self._dense_lc_helper(
-            gp_df, stacked_data, max_spacing, filt_to_int
+            gp_df, stacked_data, max_spacing
         )
 
         for filt_int in np.unique(gp_df_keep['filter']):
-            sub_series = gp_df.loc[gp_df_keep['filter'] == filt]
+            sub_series = gp_df_keep.loc[gp_df_keep['filter'] == filt_int]
 
             # fill in true values
             dense_arr[filt_int, sub_series['idx_map'], 1:3] = sub_series[['val', 'err']]
             dense_arr[filt_int, sub_series['idx_map'], 3] = 0
-            dense_arr[filt_int, :, 4] = sub_series["filt_center"]
-            dense_arr[filt_int, :, 5] = sub_series["filt_width"]
+            dense_arr[filt_int, :, 4] = sub_series["filt_center"].iloc[0]
+            dense_arr[filt_int, :, 5] = sub_series["filt_width"].iloc[0]
             
             # fix broken errors - usually if no points in that band
             mask = dense_arr[filt_int, :, 2] <= 0.0
