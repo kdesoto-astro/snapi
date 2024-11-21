@@ -63,7 +63,7 @@ class Group(Base):
     def __iter__(self):
         """Iterates through transients."""
         for obj_id in self.associated_objects:
-            yield self[obj_id]
+            yield self[obj_id[1:]]
             
     def add_col(self, col_name: str, attribute: str, attr_manipulation):
         """Add column to meta dataframe. Takes in name for column and
