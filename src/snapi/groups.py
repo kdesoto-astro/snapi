@@ -152,7 +152,7 @@ class TransientGroup(Group):
             if i % 100 == 0:
                 print(f"Added transient {i} out of {len(all_fns)}")
             try:
-                t = Transient.load(fn)
+                t = Transient.load(fn, path="/Transient")
             except:
                 print(f"{fn.split('/')[-1]} skipped: unable to load")
                 continue

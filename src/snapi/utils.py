@@ -2,6 +2,8 @@
 import os
 from typing import Any, Optional
 import sys
+import pkgutil
+import importlib
 
 import h5py
 import numpy as np
@@ -48,13 +50,27 @@ def calc_mwebv(coordinates: SkyCoord) -> float:
         
     return float(sfd(coordinates))
 
+class_cache = {}
+
+def index_classes_in_package(package_name):
+    # Traverse the modules in the package
+    for importer, modname, ispkg in pkgutil.walk_packages(
+            path=__import__(package_name).__path__, prefix=package_name + '.'):
+        try:
+            module = importlib.import_module(modname)
+            for attr_name in dir(module):
+                attr_value = getattr(module, attr_name)
+                if isinstance(attr_value, type):
+                    class_cache[attr_name] = attr_value
+        except ImportError:
+            # Handle modules that fail to import, if necessary
+            pass
+
 def str_to_class(classname):
-    for module_name, module in sys.modules.items():
-        if module_name.startswith('snapi.'):
-            try:
-                class_obj = getattr(module, classname)
-                return class_obj
-            except AttributeError:
-                # The module doesn't have the class, so continue searching
-                pass
-    raise ValueError(f"class {classname} not found in the snapi package!")
+    if not class_cache:
+        # Initialize the cache if it's not done yet
+        index_classes_in_package('snapi')
+    try:
+        return class_cache[classname]
+    except KeyError:
+        raise ValueError(f"class {classname} not found in the snapi package!")

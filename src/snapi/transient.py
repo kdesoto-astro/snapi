@@ -1,4 +1,5 @@
 from typing import Any, Iterable, Optional, Type, TypeVar
+import time
 
 import astropy.units as u
 import h5py
@@ -36,7 +37,7 @@ class Transient(Base):
             self.id = str(id(self))
         else:
             self.id = str(iid)
-
+            
         if isinstance(ra, Quantity):
             self._ra = ra.to(u.deg).value # pylint: disable=no-member
             self._dec = dec.to(u.deg).value # pylint: disable=no-member
@@ -47,15 +48,12 @@ class Transient(Base):
             self._ra = float(ra)
             self._dec = float(dec)
 
-        if photometry is None:
-            self.photometry = Photometry()
-        else:
-            self.photometry = photometry
-        
-        if spectroscopy is None:
-            self.spectroscopy = Spectroscopy()
-        else:
-            self.spectroscopy = spectroscopy
+        self.photometry = photometry
+        if photometry is not None:
+            self.associated_objects['photometry'] = Photometry.__name__
+        if spectroscopy is not None:
+            self.associated_objects['spectroscopy'] = Spectroscopy.__name__
+        self.spectroscopy = spectroscopy
             
         if internal_names is None:
             self.internal_names = set()
@@ -67,9 +65,6 @@ class Transient(Base):
 
         self._choose_main_name()
         # self.host = host
-        
-        self.associated_objects['photometry'] = Photometry.__name__
-        self.associated_objects['spectroscopy'] = Spectroscopy.__name__
         
         self.meta_attrs.extend(['id','_ra','_dec','internal_names','spec_class','redshift'])
 
@@ -163,6 +158,8 @@ class Transient(Base):
 
     def add_lightcurve(self, lightcurve: LightCurve) -> None:
         """Adds a single light curve to photometry."""
+        if self.photometry is None:
+            self.photometry = Photometry()
         self.photometry.add_lightcurve(lightcurve, inplace=True)
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:

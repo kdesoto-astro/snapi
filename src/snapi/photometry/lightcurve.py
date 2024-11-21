@@ -1,5 +1,6 @@
 """Contains classes for light curves and filters."""
 from typing import Any, Iterable, Mapping, Optional, Sequence, Type, TypeVar, cast
+import time
 
 import astropy.constants as const
 import astropy.cosmology.units as cu
@@ -79,12 +80,9 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         phased: bool = False,
         validate: bool = True,
     ) -> None:
-        Measurement.__init__(self)
-        Plottable.__init__(self)
-        TimeSeries.__init__(self, time_series, phased=phased, validate=validate)
-        
-        
-        self._validate_observer(filt)        
+        super().__init__(time_series=time_series, phased=phased, validate=validate)
+        self._validate_observer(filt)  
+
         self._image_time_bins = np.array([0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 10_000])
         self._image_flux_bins = np.array([-1000, -2, -1, -0.5, -0.2, -0.1, 0, 0.1, 0.2, 0.5, 1, 2, 1000])
         
@@ -183,8 +181,8 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         for filter information. Used in photometry dataframe generation."""
         ts_copy = self._ts.copy()
         ts_copy["filter"] = str(self._observer)
-        ts_copy["filt_center"] = self._observer.center.value if self._observer else None
-        ts_copy["filt_width"] = self._observer.width.value if (self._observer and (self._observer.width is not None)) else None
+        ts_copy["filt_center"] = self._observer.center.value if self._observer else np.nan
+        ts_copy["filt_width"] = self._observer.width.value if (self._observer and (self._observer.width is not None)) else np.nan
         return ts_copy
 
     @property

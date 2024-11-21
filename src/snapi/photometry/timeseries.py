@@ -1,5 +1,6 @@
 from typing import Optional, Any
 import abc
+import time
 import copy
 
 import pandas as pd
@@ -32,16 +33,7 @@ class TimeSeries(Base):
         self._flip_name_map()
         self._phased = phased
         if time_series is None: # initialize empty
-            if self._phased:
-                index = pd.to_timedelta([], "D")
-            else:
-                index = pd.DatetimeIndex([], dtype='datetime64[ns]', freq=None)
-            self._ts = pd.DataFrame(
-                {
-                    x[0]: np.array([], dtype=x[1]) for x in self._ts_cols.items()
-                },
-                index=index
-            )
+            self._ts = pd.DataFrame({col_name: pd.Series(dtype=dtype) for col_name, dtype in self._ts_cols.items()})
         elif isinstance(time_series, pd.DataFrame):
             if validate:
                 valid_keys = np.intersect1d(time_series.columns, list(self._alias_map.keys()), assume_unique=True)
@@ -77,11 +69,11 @@ class TimeSeries(Base):
                 self._ts = time_series.copy()
         else:
             raise TypeError("Invalid data type for time_series. Must be None or pd.DataFrame")
-
+        
         if validate:
             self._ts.index.name = "phase" if self._phased else "mjd"
             self.update()
-        
+            
         self._rng = np.random.default_rng()
 
         self.arr_attrs.append("_ts")
@@ -180,12 +172,24 @@ class TimeSeries(Base):
         
     def add_observations(self, rows: list[dict[str, Any]]) -> None:
         """Add rows to existing timeseries."""
-        if self._phased:
+        if (len(self._ts) == 0 and "phase" in row):
+            index_name = "phase"
+            self._phased = True
+        elif (len(self._ts) == 0 and "mjd" in row):
+            index_name = "mjd"
+            self._phased = False
+        elif self._phased:
+            index_name = "phase"
+        else:
+            index_name = "mjd"
+            
+        if index_name == "phase":
             new_times = [row["phase"] for row in rows]
             new_index_td = pd.to_timedelta(new_times, "D")
             new_df = pd.DataFrame.from_records(rows, index=new_index_td)
             new_df.drop(columns="phase", inplace=True)
             new_df.index.name = "phase"
+            
         else:
             new_times = [self._convert_to_datetime(row["mjd"]) for row in rows]
             new_index_dt = pd.DatetimeIndex(new_times)

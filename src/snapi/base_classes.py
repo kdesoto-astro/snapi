@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import dill
+import time
 from typing import TypeVar, Optional, Any
 import copy
 from matplotlib.axes import Axes
@@ -9,7 +10,6 @@ import pandas as pd
 from .utils import list_datasets, str_to_class
 
 
-MeasT = TypeVar("MeasT", bound="MeasurementSet")
 BaseT = TypeVar("BaseT", bound="Base")
 
 class Base(ABC):
@@ -65,37 +65,47 @@ class Base(ABC):
             path = "/" + type(self).__name__
             
         mode = "a" if append else "w"
+        
+        obj_keys = []
+        obj_values = []
+        for (k, v) in self.associated_objects.items():
+            obj_keys.append(k)
+            obj_values.append(v)
 
         # Save DataFrame and attributes to HDF5
         with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
             store.put(path, pd.Series([]))
             # first store info on array + meta attrs and assoc. objects
-            store.put(path + "/arr_attrs", pd.Series(self.arr_attrs))
-            store.put(path + "/meta_attrs", pd.Series(self.meta_attrs))
-            obj_keys = []
-            obj_values = []
-            for (k, v) in self.associated_objects.items():
-                obj_keys.append(k)
-                obj_values.append(v)
-            store.put(path + "/assoc_keys", pd.Series(obj_keys))
-            store.put(path + "/assoc_types", pd.Series(obj_values))
+            #store.put(path + "/arr_attrs", pd.Series(self.arr_attrs))
+            #store.put(path + "/meta_attrs", pd.Series(self.meta_attrs))
+            
+            #store.put(path + "/assoc_keys", pd.Series(obj_keys))
+            #store.put(path + "/assoc_types", pd.Series(obj_values))
                     
             for arr_attr in self.arr_attrs:
                 attr = getattr(self, arr_attr)
                 if isinstance(attr, pd.DataFrame):
-                    store.put(path + f"/{arr_attr}", attr)
+                    store.put(f"{path}/{arr_attr}", attr)
                 else:
-                    store.put(path + f"/{arr_attr}", pd.Series(attr))
+                    store.put(f"{path}/{arr_attr}", pd.Series(attr))
                                             
         # Save any meta attrs
         with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
+            attrs = store.get_storer(path).attrs
             for meta_attr in self.meta_attrs:
                 a = getattr(self, meta_attr)
                 try:
-                    setattr(store.get_storer(path).attrs, meta_attr, a)
+                    setattr(attrs, meta_attr, a)
                 except:
                     a_enc = dill.dumps(self._cols)
-                    setattr(store.get_storer(path).attrs, meta_attr, a_enc)
+                    setattr(attrs, meta_attr, a_enc)
+                    
+            # store attributes
+            setattr(attrs, 'arr_attrs', self.arr_attrs)
+            setattr(attrs, 'meta_attrs', self.meta_attrs)
+            setattr(attrs, 'assoc_keys', obj_keys)
+            setattr(attrs, 'assoc_types', obj_values)
+            
 
         # Save associated objects
         for assoc_obj in self.associated_objects:
@@ -110,7 +120,9 @@ class Base(ABC):
         """Load LightCurve from saved HDF5 table. Automatically
         extracts feature information.
         """
+        t0 = time.time()
         new_obj = cls()
+        t1 = time.time()
 
         if path is None:
             path = "/" + cls.__name__
@@ -119,31 +131,35 @@ class Base(ABC):
                     store[path]
                 except:
                     raise ValueError(f"Default path {path} does not exist in file, please manually set path.")
-            
+        
+        
         with pd.HDFStore(file_name) as store:
+            t2 = time.time()
             # unload attributes first
             attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
             
             # get info about meta, array attributes, and associated objects
-            new_obj.arr_attrs = list(store[path+'/arr_attrs'])
-            new_obj.meta_attrs = list(store[path + '/meta_attrs'])
-            assoc_obj_keys = store[path + '/assoc_keys']
-            assoc_obj_types = store[path + '/assoc_types']
+            new_obj.arr_attrs = attr_dict['arr_attrs']
+            new_obj.meta_attrs = attr_dict['meta_attrs']
+            assoc_obj_keys = attr_dict['assoc_keys']
+            assoc_obj_types = attr_dict['assoc_types']
             new_obj.associated_objects = {k: t for (k,t) in zip(assoc_obj_keys, assoc_obj_types)}
             
             # extract meta values
             for a_key in new_obj.meta_attrs:
                 setattr(new_obj, a_key, attr_dict[a_key])
+            t3 = time.time()
             for attr_name in new_obj.arr_attrs: # array attribute
                 attr = store[f"{path}/{attr_name}"]
                 if isinstance(attr, pd.DataFrame):
                     setattr(new_obj, attr_name, attr)
                 else:
                     setattr(new_obj, attr_name, attr.to_numpy())
+            t4 = time.time()
             for attr_name in new_obj.associated_objects: # associated object load
                 subtype = str_to_class(new_obj.associated_objects[attr_name])
                 setattr(new_obj, attr_name, subtype.load(file_name, f"{path}/{attr_name}"))
-                    
+            t_upd = time.time()
             new_obj.update()
             
             return new_obj
@@ -151,6 +167,9 @@ class Base(ABC):
 
 class Plottable(Base):
     """Class for objects that can be plotted."""
+    
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
     @abstractmethod
     def plot(self, ax: Axes) -> Axes:
@@ -165,14 +184,14 @@ class Measurement(Base):
     modality, such as a spectrum or light curve."""
 
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__()
+        super().__init__(*args, **kwargs)
         
     def _validate_observer(self, observer):
         """Validate associated observer."""
         if (observer is not None) and (not isinstance(observer, Observer)):
             raise TypeError("filt must be None or an Observer subclass object!")
         self._observer = observer
-        if observer is not None:
+        if self._observer is not None:
             self.associated_objects['_observer'] = observer.__class__.__name__
 
 

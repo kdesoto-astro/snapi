@@ -40,10 +40,8 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         validate: bool = True,
         filt: Any = None
     ) -> None:
-        
         super().__init__(time_series, phased=phased, filt=None, validate=validate)
         self.update()
-        self._rng: np.random.Generator = np.random.default_rng()
         
     def copy(self):
         """Return a copy of the TimeSeries."""
@@ -270,11 +268,13 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
                     )
                     new_phot.update()
                     return new_phot
-        
-        new_ts = pd.concat(
-            [self._ts, light_curve.full_time_series],
-            copy=False
-        )
+        if len(self._ts) == 0:
+            new_ts = light_curve.full_time_series
+        else:
+            new_ts = pd.concat(
+                [self._ts, light_curve.full_time_series],
+                copy=False
+            )
         new_ts.index.name = "phase" if self._phased else "mjd"
         
         if inplace:

@@ -20,7 +20,7 @@ def fit_transient_group(
     n_parallel: Optional[int] = None,
     checkpoint_fn: Optional[str] = None,
     checkpoint_freq: int = 100,
-) -> SamplerResultGroup
+) -> SamplerResultGroup:
     """Fit all transients in a group by the same Sampler
     with the same SamplerPrior. If parallelize, run
     simultaneously across n_parallel cores. If checkpoint_fn,
