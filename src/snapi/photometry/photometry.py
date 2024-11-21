@@ -170,6 +170,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         peaks = self.detections.groupby("filter", group_keys=False).apply(
             lambda x: (x["flux"] - x["flux_error"]).idxmax()
         )
+        print(peaks, peaks.median())
         return peaks.median()
 
     def calculate_period(self) -> float:

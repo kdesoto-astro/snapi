@@ -423,9 +423,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         and k-corrections.
         """
         if not self._phased:
-            phased_lc = self.phase(inplace=False)
-            print(phased_lc.detections)
-            times = phased_lc.times
+            times = self.phase(inplace=False).times
         else:
             times = self._mjd
             
