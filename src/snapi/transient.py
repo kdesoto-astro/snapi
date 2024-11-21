@@ -49,10 +49,6 @@ class Transient(Base):
             self._dec = float(dec)
 
         self.photometry = photometry
-        if photometry is not None:
-            self.associated_objects['photometry'] = Photometry.__name__
-        if spectroscopy is not None:
-            self.associated_objects['spectroscopy'] = Spectroscopy.__name__
         self.spectroscopy = spectroscopy
             
         if internal_names is None:
@@ -165,21 +161,27 @@ class Transient(Base):
         
     @property
     def photometry(self) -> Photometry:
-        return self.photometry
+        return self._photometry
     
     @photometry.setter
     def photometry(self, photometry) -> None:
-        self.photometry = photometry
-        self.associated_objects['photometry'] = Photometry.__name__
+        if photometry is None:
+            self.associated_objects.pop('_photometry', None)
+        else:
+            self.associated_objects['_photometry'] = Photometry.__name__
+        self._photometry = photometry
         
     @property
     def spectroscopy(self) -> Spectroscopy:
-        return self.spectroscpy
+        return self._spectroscpy
     
     @spectroscopy.setter
     def spectroscopy(self, spectroscopy) -> None:
-        self.spectroscopy = spectroscopy
-        self.associated_objects['spectroscopy'] = Spectroscopy.__name__
+        self._spectroscopy = spectroscopy
+        if spectroscopy is None:
+            self.associated_objects.pop('_spectroscopy', None)
+        else:
+            self.associated_objects['_spectroscopy'] = Spectroscopy.__name__
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:
         """Adds a set of light curves to the
