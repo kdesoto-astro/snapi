@@ -160,7 +160,26 @@ class Transient(Base):
         """Adds a single light curve to photometry."""
         if self.photometry is None:
             self.photometry = Photometry()
+            
         self.photometry.add_lightcurve(lightcurve, inplace=True)
+        
+    @property
+    def photometry(self) -> Photometry:
+        return self.photometry
+    
+    @photometry.setter
+    def photometry(self, photometry) -> None:
+        self.photometry = photometry
+        self.associated_objects['photometry'] = Photometry.__name__
+        
+    @property
+    def spectroscopy(self) -> Spectroscopy:
+        return self.spectroscpy
+    
+    @spectroscopy.setter
+    def spectroscopy(self, spectroscopy) -> None:
+        self.spectroscopy = spectroscopy
+        self.associated_objects['spectroscopy'] = Spectroscopy.__name__
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:
         """Adds a set of light curves to the
@@ -175,6 +194,7 @@ class Transient(Base):
         """Adds a single spectrum to the spectroscopy attribute."""
         if self.spectroscopy is None:
             self.spectroscopy = Spectroscopy()  # initialize new instance
+            
         self.spectroscopy.add_spectrum(spectrum)
 
     def add_spectra(self, spectra: Iterable[Spectrum]) -> None:
