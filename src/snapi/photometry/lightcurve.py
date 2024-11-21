@@ -423,12 +423,12 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         and k-corrections.
         """
         if not self._phased:
-            times = self.phase(inplace=False).times
+            phased_lc = self.phase(inplace=False)
+            print(phased_lc)
+            times = phased_lc.times
         else:
             times = self._mjd
             
-        print(times)
-
         new_times = times / (1.0 + redshift)
         shift_timedelta = pd.to_timedelta(new_times, "D")
         
