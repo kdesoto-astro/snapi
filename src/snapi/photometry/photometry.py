@@ -167,7 +167,6 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         peaks = self.detections.groupby("filter", group_keys=False).apply(
             lambda x: (x["mag"] + x["mag_error"]).idxmin()
         )
-        print(peaks)
         #peaks = self.detections.groupby("filter", group_keys=False).apply(
         #    lambda x: (x["flux"] - x["flux_error"]).idxmax()
         #)
