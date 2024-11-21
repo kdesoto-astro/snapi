@@ -48,7 +48,7 @@ class ALeRCEQueryAgent(QueryAgent):
         # Getting detections for an object
         lc = self._client.query_lightcurve(objname, format="pandas")
         detections = pd.DataFrame(list(lc["detections"])[0])
-
+        
         # add nondetections
         nondetections = pd.DataFrame(list(lc["non_detections"])[0])
         non_na_columns = detections.columns[detections.notna().any()]
@@ -64,8 +64,9 @@ class ALeRCEQueryAgent(QueryAgent):
             return [], False
         if len(all_detections) == 0:
             return [], False
-
-        # add extra fields
+        
+        """
+        # add extra fields: seems unnecessary right now
         if "extra_fields" in all_detections.columns:
             extra_fields = all_detections["extra_fields"].apply(pd.Series)
             cols_to_use = extra_fields.columns.difference(all_detections.columns)
@@ -74,6 +75,7 @@ class ALeRCEQueryAgent(QueryAgent):
                 axis=1,
             )
             all_detections.drop(columns=["extra_fields"], inplace=True)
+        """
 
         all_detections.reset_index(drop=True, inplace=True)
 
@@ -107,11 +109,13 @@ class ALeRCEQueryAgent(QueryAgent):
             all_detections.loc[nondetect_mask, "upper_limit"] = True
 
         all_detections.rename(columns={
-            'mjd': 'time',
             'e_mag': 'mag_unc',
-            'upper_limit': 'non_detections',
             'magzpsci': 'zpt'
         }, inplace=True)
+        
+        # remove repeated non-detections + forced-detections
+        nonrepeat_mask = all_detections.groupby("mjd", group_keys=False)['upper_limit'].idxmin()
+        all_detections = all_detections.loc[nonrepeat_mask,['mjd', 'fid', 'mag', 'mag_unc', 'upper_limit', 'zpt']]
 
         lcs: list[LightCurve] = []
 

@@ -152,7 +152,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         
         if inplace:
             self._ts = self._ts.loc[self._ts['filter'].isin(filts)]
-            self._unique_filters = filts
+            self._unique_filters = self._ts['filter'].unique()
         
         filtered_df = self._ts.loc[self._ts['filter'].isin(filts)]
         return self.__class__(

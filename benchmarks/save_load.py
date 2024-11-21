@@ -37,8 +37,8 @@ class TransientGroupSaveLoad:
             instrument="ZTF",
             center=6173.23,
         )
-        test_lightcurve = LightCurve(
-            times=[0.0, 3.0, 2.5, 4.0],
+        test_lightcurve = LightCurve.from_arrays(
+            phase=[0.0, 3.0, 2.5, 4.0],
             mags=[21, 20, 20, 20],
             mag_errs=[0.3, 0.1, 0.2, 0.5],
             zpts=[25.0, 25.0, 25.0, 25.0],
@@ -53,7 +53,7 @@ class TransientGroupSaveLoad:
                     dec=30,
                     redshift=0.01,
                     internal_names={},
-                    photometry=Photometry([test_lightcurve,]),
+                    photometry=Photometry.from_light_curves([test_lightcurve,]),
                     spectroscopy=Spectroscopy([test_spectrum,]),
                 )
             )
@@ -111,8 +111,8 @@ class TransientSaveLoad:
                 center=6173.23,
             )
             test_lcs.append(
-                LightCurve(
-                    times=[0.0, 3.0, 2.5, 4.0],
+                LightCurve.from_arrays(
+                    phase=[0.0, 3.0, 2.5, 4.0],
                     mags=[21, 20, 20, 20],
                     mag_errs=[0.3, 0.1, 0.2, 0.5],
                     zpts=[25.0, 25.0, 25.0, 25.0],
@@ -127,7 +127,7 @@ class TransientSaveLoad:
                 dec=30,
                 redshift=0.01,
                 internal_names={},
-                photometry=Photometry(test_lcs[:n]),
+                photometry=Photometry.from_light_curves(test_lcs[:n]),
             )
             transient_phot.save(f"test_transient_phot_{n}.h5")
             
@@ -148,7 +148,7 @@ class TransientSaveLoad:
                 redshift=0.01,
                 internal_names={},
                 spectroscopy=Spectroscopy(test_specs[:n]),
-                photometry=Photometry(test_lcs[:n]),
+                photometry=Photometry.from_light_curves(test_lcs[:n]),
             )
             transient_both.save(f"test_transient_both_{n}.h5")
         
@@ -195,8 +195,8 @@ class LightCurveSaveLoad:
                 instrument=f"ZTF{n_obs}",
                 center=6173.23,
             )
-            test_lc = LightCurve(
-                times=np.linspace(0.,10.,num=n_obs),
+            test_lc = LightCurve.from_arrays(
+                phase=np.linspace(0.,10.,num=n_obs),
                 mags=np.linspace(10.,20.,num=n_obs),
                 mag_errs=np.linspace(1.,2.,num=n_obs),
                 zpts=[25.,] * n_obs,

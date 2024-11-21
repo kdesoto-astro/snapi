@@ -19,7 +19,7 @@ from ..utils import calc_mwebv
 from ..base_classes import Measurement, Plottable
 from .timeseries import TimeSeries
 from .filter import Filter
-from .utils import resample_helper, calc_all_deltas
+from .utils import resample_helper, calc_all_deltas, update_merged_fluxes
 
 LightT = TypeVar("LightT", bound="LightCurve")
     
@@ -314,7 +314,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             ts = self._ts
         else:
             ts = self._ts.copy()
-
+            
         if len(other.detections) > 0:
             # among detections, fill in missing errors/zeropoints
             nd_mask = ts["upper_limit"]
