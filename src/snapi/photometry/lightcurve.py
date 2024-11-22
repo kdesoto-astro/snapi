@@ -380,8 +380,8 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         """Extends light curve by padding.
         Currently, pads based on 'fill' dictionary.
         """
-        if (not self._phased) and ("time" not in fill):
-            raise KeyError("time must be a key in fill")
+        if (not self._phased) and ("mjd" not in fill):
+            raise KeyError("mjd must be a key in fill")
         elif (self._phased) and ("phase" not in fill):
             raise KeyError("phase must be a key in fill")
         if n_times < 0:

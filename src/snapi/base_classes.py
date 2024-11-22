@@ -97,9 +97,7 @@ class Base(ABC):
             # store attributes
             setattr(attrs, 'arr_attrs', self.arr_attrs)
             setattr(attrs, 'meta_attrs', self.meta_attrs)
-            print("SETTING ASSOC_KEYS", obj_keys)
             setattr(attrs, 'assoc_keys', obj_keys)
-            print("SETTING ASSOC_TYPES", obj_values)
             setattr(attrs, 'assoc_types', obj_values)
             
 

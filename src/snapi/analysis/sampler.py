@@ -166,6 +166,7 @@ class SamplerResult(Base):
         self,
         fit_parameters: Any = None,
         sampler_name: Optional[str] = None,
+        event_id: str = "",
     ):
         """
         Parameters
@@ -175,6 +176,9 @@ class SamplerResult(Base):
             with each key must be one-dimensional.
         """
         super().__init__()
+        
+        self.id = event_id
+        
         if isinstance(fit_parameters, dict):
             for key, value in fit_parameters.items():
                 if np.atleast_1d(value).ndim != 1:
@@ -191,7 +195,7 @@ class SamplerResult(Base):
         self.score = 0.0
         
         self.arr_attrs.append("_fit_params")
-        self.meta_attrs.extend(["_sampler_name", "score"])
+        self.meta_attrs.extend(["_id", "_sampler_name", "score"])
 
     def __str__(self) -> str:
         return str(self._fit_params)
@@ -414,14 +418,14 @@ class Sampler(BaseEstimator):  # type: ignore
         dets = photometry.detections
         dets_mjd = dets.index.total_seconds().to_numpy() / (24 * 3600)
         if self._mag_y:
-            x_arr = np.array([dets_mjd, dets["filters"], dets["mag_unc"]], dtype=object).T
+            x_arr = np.array([dets_mjd, dets["filter"], dets["mag_error"]], dtype=object).T
         else:
-            x_arr = np.array([dets_mjd, dets["filters"], dets["flux_unc"]], dtype=object).T
+            x_arr = np.array([dets_mjd, dets["filter"], dets["flux_error"]], dtype=object).T
 
         y = dets["mag"].to_numpy() if self._mag_y else dets["flux"].to_numpy()
         return x_arr, y
 
-    def fit_photometry(self, photometry: Photometry) -> None:
+    def fit_photometry(self, photometry: Photometry, **kwargs) -> None:
         """Fit a Photometry object. Saves information to
         Photometry object.
 
@@ -430,7 +434,7 @@ class Sampler(BaseEstimator):  # type: ignore
             The Photometry object to fit.
         """
         x_phot, y_phot = self._convert_photometry_to_arrs(photometry)
-        self.fit(x_phot, y_phot)
+        self.fit(x_phot, y_phot, **kwargs)
 
     def predict_photometry(
         self, photometry: Photometry
@@ -507,7 +511,7 @@ class Sampler(BaseEstimator):  # type: ignore
             formatter.rotate_markers()
         return ax
 
-    def load_result(self, load_fn: str) -> None:
+    def load_result(self, sampler_result: SamplerResult) -> None:
         """Load a FitResult from an HDF5 file.
 
         Parameters
@@ -517,7 +521,7 @@ class Sampler(BaseEstimator):  # type: ignore
         hdf5_path : str, optional
             The path to load the fit results from in the HDF
         """
-        self.result = SamplerResult.load(load_fn)
+        self.result = sampler_result
         self._is_fitted = True
 
     def _eff_variance(self, X: NDArray[np.object_]) -> NDArray[np.float64]:

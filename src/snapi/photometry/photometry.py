@@ -189,8 +189,8 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         peak_flux = self.detections['flux'].dropna().max()
         
         if inplace:
-            self._ts.fluxes /= peak_flux
-            self._ts.flux_errors /= peak_flux
+            self.fluxes /= peak_flux
+            self.flux_errors /= peak_flux
             return self
         
         new_phot = self.__class__(

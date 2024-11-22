@@ -59,6 +59,9 @@ class Group(Base):
             self._meta.loc[obj_id,:] = pd.Series(extracted_dict)
             
         setattr(self, "_"+obj_id, obj)
+        
+    def __len__(self):
+        return len(self.associated_objects)
  
     def __iter__(self):
         """Iterates through transients."""
@@ -187,21 +190,23 @@ class SamplerResultGroup(Group):
         param_names: Optional[list[str]] = None
     ) -> None:
         
-        super().__init__(sampler_results)
+        self._cols = {}
+            
         if param_names is None and (sampler_results is not None):
             # union of all fits
             for sr in sampler_results:
                 for fp in sr.fit_parameters:
-                    if fp in self_cols:
+                    if fp in self._cols:
                         continue
-                    self._cols[f"{fp}_median"] = lambda x: np.nanmedian(x.fit_parameters[fp])
-        else:
+                    self._cols[f"{fp}_median"] = lambda x: x.fit_parameters[fp].dropna().median()
+        elif param_names is not None:
             for fp in param_names:
-                self._cols[f"{fp}_median"] = lambda x: np.nanmedian(x.fit_parameters[fp])
+                self._cols[f"{fp}_median"] = lambda x: x.fit_parameters[fp].dropna().median()
                 
         self._cols['score'] = lambda x: x.score
         self._cols['sampler'] = lambda x: x.sampler
         
+        super().__init__(sampler_results)
         
     @classmethod
     def from_directory(cls, dir_path: str, names: Optional[Iterable[str]] = None):
@@ -213,7 +218,7 @@ class SamplerResultGroup(Group):
             os.path.join(dir_path, "*.h5")
         )
         for fn in all_fns:
-            t = SamplerResult.load(fn)
+            t = SamplerResult.load(fn, path='/Transient')
             if hasattr(new_obj, "_"+t.id):
                 continue
             setattr(new_obj, "_"+t.id, t) # will also check uniqueness
