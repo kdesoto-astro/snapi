@@ -1,48 +1,32 @@
 # Scripts that bridge the transition between classes
 from typing import Optional
 from functools import partial
+import itertools
 import copy
 import multiprocess as mp
-#import dill
-#from pathos.multiprocessing import ProcessPool
+import logging
 import os
 import numpy as np
 
 from .groups import TransientGroup, SamplerResultGroup
 from .analysis import Sampler, SamplerResult
 from .photometry import Photometry
-
-"""
-__STATE = _ProcessPool__STATE = _CustomPool__STATE = {}
-
-class CustomPool(ProcessPool):
-    def __init__(self, *args, **kwds):
-        self.__nodes = kwds.pop('ncpus', cpu_count())
-        super().__init__(*args, **kwds)
-        
-    def _serve(self, nodes=None): #XXX: should be STATE method; use id
-        
-        if nodes is None: nodes = self.__nodes
-        _pool = __STATE.get(self._id, None)
-        if not _pool or nodes != _pool.__nodes or self._kwds != _pool._kwds:
-            self._clear()
-            ctx = mp.get_context('spawn')
-            _pool = ctx.Pool(nodes, **self._kwds)
-            _pool.__nodes = nodes
-            _pool._kwds = self._kwds
-            __STATE[self._id] = _pool
-        return _pool
-"""
     
+    
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(processName)s - %(message)s',
+    level=logging.INFO
+)
+
 def single_worker_fit(transient_batch, sampler, pad):
     """Single worker's script to run in parallel."""
     sampler_results = []
     for t in transient_batch:
-        print(t)
         sampler_results.append(
             single_transient_fit(t, sampler, pad)
         )
-    print("worker done")
+    logging.info("Worker done")
     return sampler_results
         
     
@@ -85,6 +69,7 @@ def fit_transient_group(
     save checkpointed SamplerResultGroup every checkpoint_freq
     fits.
     """
+    
     if checkpoint_fn and os.path.exists(checkpoint_fn): # first try loading checkpoint
         sr_group = SamplerResultGroup.load(checkpoint_fn)
         sampler_results = [x for x in sr_group]
@@ -97,22 +82,26 @@ def fit_transient_group(
         transients = [x for x in transient_group]
     
     if parallelize:
+        mp.log_to_stderr(logging.INFO)
         single_worker_fit_static = partial(
             single_worker_fit, pad=pad
         )
         samplers = [copy.deepcopy(sampler) for i in range(n_parallel)]
         ctx = mp.get_context('spawn')
-        pool = ctx.Pool(n_parallel)
         
         if checkpoint_fn:
-            checkpoint_batches = [transients[i::checkpoint_freq] for i in range(checkpoint_freq)]
+            num_checkpoints = len(transients) // checkpoint_freq
+            checkpoint_batches = [transients[i::num_checkpoints] for i in range(num_checkpoints)]
             for i, cb in enumerate(checkpoint_batches):
                 transient_batches = [cb[i::n_parallel] for i in range(n_parallel)]
-                result = pool.starmap(single_worker_fit_static, zip(transient_batches, samplers))
+                
+                with ctx.Pool(n_parallel) as pool:
+                    result = pool.starmap(single_worker_fit_static, zip(transient_batches, samplers))
+                    
                 flattened_result = list(itertools.chain(*result))
                 sampler_results.extend(flattened_result)
                 SamplerResultGroup(sampler_results).save(checkpoint_fn)
-                print(f"Finished checkpoint {i} of {len(checkpoint_batches)}")
+                print(f"Finished checkpoint {i} of {num_checkpoints}")
                 
         else:
             transient_batches = [transients[i::n_parallel] for i in range(n_parallel)]

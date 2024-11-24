@@ -74,7 +74,7 @@ class SamplerPrior(Base):
             self._relative_masks[op] = (jnp.array(rel_mask), jnp.array(rel_idxs))
             
         # faster sample calls
-        self._logged = self._df['logged'].to_numpy()
+        self._logged = np.where(self._df['logged'])[0]
         self._mean = self._df['mean'].to_numpy()
         self._std = self._df['stddev'].to_numpy()
         self._numpyro_sample_arr = self._df[['param', 'min', 'max', 'mean', 'stddev']].to_numpy()
@@ -153,6 +153,7 @@ class SamplerPrior(Base):
         shuffle_idxs = [np.where(samples.columns == p)[0][0] for p in self._df['param']]
         samples_shuffled = samples.iloc[:,shuffle_idxs] # now order matches
         samples_shuffled.iloc[:,self._logged] = 10**samples_shuffled.iloc[:,self._logged]
+        
         samples_numpy = samples_shuffled.to_numpy()
         samples_shuffled.iloc[:,np.array(self._relative_masks["+"][0])] += samples_numpy[:,np.array(self._relative_masks["+"][1])]
         samples_shuffled.iloc[:,np.array(self._relative_masks["*"][0])] *= samples_numpy[:,np.array(self._relative_masks["*"][1])]

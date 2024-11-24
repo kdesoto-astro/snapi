@@ -42,6 +42,7 @@ class Group(Base):
             self._meta = pd.DataFrame([], columns=['id', *self._cols.keys()])
         else:
             self._meta = pd.DataFrame(extracted_dicts)
+            
         self._meta.set_index('id', inplace=True)
         self._meta.sort_index(inplace=True)
         
@@ -85,6 +86,7 @@ class Group(Base):
         for c, v in self._cols.items():
             altered_attr = v(obj)
             meta_dict[c] = altered_attr
+        
         return meta_dict
     
     @property
@@ -96,6 +98,7 @@ class Group(Base):
     def filter(self, ids: Iterable[str], inplace: bool=False) -> Any:
         """Return copy of object but only with ids in 'ids'.
         """
+        print(ids)
         if inplace:
             for obj_id in self.associated_objects:
                 if obj_id[1:] not in ids:
@@ -109,10 +112,12 @@ class Group(Base):
         else:
             group = self.__class__()
             for obj_id in self.associated_objects:
-                if (obj_id in ids) and hasattr(self, obj_id):
-                    group_obj = getattr(self, "_"+obj_id)
-                    setattr(group, "_"+obj_id, group_obj) # will also check uniqueness
-                    group.associated_objects["_"+obj_id] = group_obj.__class__.__name__
+                print(obj_id)
+                if (obj_id[1:] in ids) and hasattr(self, obj_id):
+                    group_obj = getattr(self, obj_id)
+                    print(group_obj)
+                    setattr(group, obj_id, group_obj) # will also check uniqueness
+                    group.associated_objects[obj_id] = group_obj.__class__.__name__
                     
         group.update()
                     
@@ -198,10 +203,11 @@ class SamplerResultGroup(Group):
                 for fp in sr.fit_parameters:
                     if fp in self._cols:
                         continue
-                    self._cols[f"{fp}_median"] = lambda x: x.fit_parameters[fp].dropna().median()
+                    self._cols[f"{fp}_median"] = lambda x, col=fp: x.fit_parameters[col].dropna().median()
+                    
         elif param_names is not None:
             for fp in param_names:
-                self._cols[f"{fp}_median"] = lambda x: x.fit_parameters[fp].dropna().median()
+                self._cols[f"{fp}_median"] = lambda x, col=fp: x.fit_parameters[col].dropna().median()
                 
         self._cols['score'] = lambda x: x.score
         self._cols['sampler'] = lambda x: x.sampler
