@@ -387,11 +387,12 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         stacked_data_keep = stacked_data[gp_df['idx_map'] < max_n]
         
         gaussian_process = generate_gp(gp_df_keep['val'].to_numpy(), gp_df_keep['err'].to_numpy(), stacked_data_keep)
-        
+                
+        _, gp_df_keep['filter'] = np.unique(gp_df_keep['filter'], return_inverse=True)
         nfilts = len(np.unique(gp_df_keep['filter']))
         x_pred = np.zeros((len(dense_times) * nfilts, 2))
 
-        for j in np.arange(nfilts):
+        for j in range(nfilts):
             x_pred[j::nfilts, 0] = dense_times
             x_pred[j::nfilts, 1] = j
 
@@ -401,11 +402,9 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         dense_arr[:, :, 0] = dense_times
         dense_arr[:, :, 3] = 1  # interpolated mask
 
-        for i, filt_int in enumerate(
-            np.unique(gp_df_keep['filter'])
-        ):
-            dense_arr[i, :, 1] = pred[x_pred[:, 1] == filt_int]
-            dense_arr[i, :, 2] = np.sqrt(pred_var[x_pred[:, 1] == filt_int])
+        for i in range(nfilts):
+            dense_arr[i, :, 1] = pred[x_pred[:, 1] == i]
+            dense_arr[i, :, 2] = np.sqrt(pred_var[x_pred[:, 1] == i])
 
         return dense_arr, gp_df_keep
 
@@ -469,8 +468,8 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
             gp_df, stacked_data, max_spacing
         )
 
-        for i, filt_int in enumerate(np.unique(gp_df_keep['filter'])):
-            sub_series = gp_df_keep.loc[gp_df_keep['filter'] == filt_int]
+        for i in np.unique(gp_df_keep['filter']):
+            sub_series = gp_df_keep.loc[gp_df_keep['filter'] == i]
 
             # fill in true values
             dense_arr[i, sub_series['idx_map'], 1:3] = sub_series[['val', 'err']]
