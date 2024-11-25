@@ -2,8 +2,10 @@
 """Stores superclass for sampler objects and fit results."""
 import os
 from typing import Any, Mapping, Optional, Type, TypeVar
+import warnings
 
 import jax.numpy as jnp
+import jax
 import numpy as np
 import numpyro.distributions as dist
 import numpyro
@@ -17,6 +19,9 @@ from scipy.stats import truncnorm
 from ..formatter import Formatter
 from ..photometry import Photometry
 from ..base_classes import Base
+
+jax.config.update('jax_platform_name', 'cpu')
+warnings.filterwarnings("ignore", category=UserWarning, message="Found vars in model but not guide: {.*}")
 
 ResultT = TypeVar("ResultT", bound="SamplerResult")
 
@@ -56,28 +61,41 @@ class SamplerPrior(Base):
                     self._df.append(r, inplace=True)
                     rerun = True
                     
+        self._relative_mask = self._df['relative'].notna().to_numpy()
+        self._relative_idxs = []
+
+        # get shuffled relative idxs
+        for rel_val in self._df.loc[self._relative_mask, 'relative']:
+            # Find the index where the 'param' column matches the 'relative' value
+            index = self._df[self._df['param'] == rel_val].index
+            self._relative_idxs.append(index[0])  # Storing the first matching index
+        
+        
+        self._df.loc[
+            self._relative_mask, 'min'
+        ] = self._df.iloc[self._relative_idxs]['min'].to_numpy()
+        
+        self._df.loc[
+            self._relative_mask, 'max'
+        ] = self._df.iloc[self._relative_idxs]['max'].to_numpy()
+        
+                    
         self._tga = ((self._df['min'] - self._df['mean']) / self._df['stddev']).to_numpy()
         self._tgb = ((self._df['max'] - self._df['mean']) / self._df['stddev']).to_numpy()
-        
-        self._relative_masks = {}
-        
-        for op in ["*", "+"]:
-            rel_mask = (self._df['relative'].notna() & (self._df['relative_op'] == op)).to_numpy()
-            rel_idxs = []
-
-            # get shuffled relative idxs
-            for rel_val in self._df.loc[rel_mask, 'relative']:
-                # Find the index where the 'param' column matches the 'relative' value
-                index = self._df[self._df['param'] == rel_val].index
-                rel_idxs.append(index[0])  # Storing the first matching index
-
-            self._relative_masks[op] = (jnp.array(rel_mask), jnp.array(rel_idxs))
             
         # faster sample calls
-        self._logged = np.where(self._df['logged'])[0]
+        self._logged = self._df['logged']
         self._mean = self._df['mean'].to_numpy()
         self._std = self._df['stddev'].to_numpy()
-        self._numpyro_sample_arr = self._df[['param', 'min', 'max', 'mean', 'stddev']].to_numpy()
+        self._numpyro_sample_arr = jnp.array(
+            self._df[['min', 'max', 'mean', 'stddev']].to_numpy().astype(float).T
+        )
+        
+        self._relative_idxs_jax = jnp.array(self._relative_idxs)
+        self._logged_jax = jnp.array(self._logged)
+        self._relative_mask_jax = jnp.array(self._relative_mask)
+        self._params = self._df['param'].to_numpy()
+        
         
     def __get__(self, key):
         """Retrieve prior info for a certain parameter."""
@@ -93,7 +111,7 @@ class SamplerPrior(Base):
         """Return all prior info in a dataframe."""
         return self._df.copy()
     
-    def _trunc_norm(self, fields, low=None, high=None):
+    def _trunc_norm(self, fields):
         """Provides keyword parameters to numpyro's TruncatedNormal, using the fields in PriorFields.
 
         Parameters
@@ -106,17 +124,10 @@ class SamplerPrior(Base):
         numpyro.distributions.TruncatedDistribution
             A truncated normal distribution.
         """
-        if high is None:
-            high = fields[1]
-        else:
-            high = jnp.minimum(high, fields[1])
-        if low is None:
-            low = fields[0]
-        else:
-            low = jnp.maximum(low, fields[0])
-
         return dist.TruncatedNormal(
-            loc=fields[2], scale=fields[3], low=low, high=high, validate_args=True
+            loc=fields[2], scale=fields[3], 
+            low=fields[0], high=fields[1],
+            validate_args=False
         )
     
     def sample(self, cube, use_numpyro=False):
@@ -124,40 +135,104 @@ class SamplerPrior(Base):
         use the numpyro framework.
         """
         if use_numpyro:
-            vals = jnp.array([numpyro.sample(r[0], self._trunc_norm(r[1:])) for r in self._numpyro_sample_arr])
-            vals = vals.at[self._logged].set(10**vals[self._logged])
-            vals = vals.at[self._relative_masks["*"][0]].set(vals[self._relative_masks["*"][0]] * vals[self._relative_masks["*"][1]])
-            vals = vals.at[self._relative_masks["+"][0]].set(vals[self._relative_masks["+"][0]] + vals[self._relative_masks["+"][1]])
-        else:
-            #if cube is None:
-            #    cube = self._rng.uniform(size=len(self._df))
+            num_params = self._numpyro_sample_arr.shape[1]
+            # Extract necessary initialization values from the provided sample array
+            min_vals, max_vals, init_loc, init_scale = self._numpyro_sample_arr
+            # Start by sampling all parameters initially
+            with numpyro.plate("params", num_params):
+                initial_samples = numpyro.sample(
+                    "initial_samples",
+                    dist.TruncatedNormal(
+                        loc=init_loc,
+                        scale=init_scale,
+                        low=min_vals,
+                        high=max_vals
+                    )
+                )
                 
-            vals = truncnorm.ppf(
-                cube, self._tga, self._tgb,
-                loc=self._mean,
-                scale=self._std
+                # Compute the adjustment only for relative ones
+                relative_shifts = jnp.zeros(num_params)
+                relative_shifts = relative_shifts.at[self._relative_mask_jax].set(
+                    init_loc[self._relative_idxs_jax]
+                )
+                
+                # New means for the next sampling, adjusted by the relative criteria
+                adjusted_locs = init_loc + relative_shifts
+
+                # Reapply the constraints to adjusted_locs to make sure they stay within bounds
+                adjusted_locs_constrained = jnp.clip(adjusted_locs, min_vals, max_vals)
+
+                # Re-sample using the adjusted means only for relative parameters
+                vals = numpyro.sample(
+                    "samples",
+                    dist.TruncatedNormal(
+                        loc=adjusted_locs_constrained,
+                        scale=init_scale,
+                        low=min_vals,
+                        high=max_vals
+                    )
+                )
+                vals = vals.at[self._logged_jax].set(10**vals[self._logged_jax])
+            
+        else:
+            if cube is None:
+                cube = self._rng.uniform(size=len(self._df))
+            vals = np.zeros(len(cube))
+            
+            vals[~self._relative_mask] = truncnorm.ppf(
+                cube[~self._relative_mask],
+                self._tga[~self._relative_mask],
+                self._tgb[~self._relative_mask],
+                loc=self._mean[~self._relative_mask],
+                scale=self._std[~self._relative_mask],
+            )
+            
+            vals[self._relative_mask] = truncnorm.ppf(
+                cube[self._relative_mask],
+                self._tga[self._relative_mask],
+                self._tgb[self._relative_mask],
+                loc=self._mean[self._relative_mask] + vals[self.relative_idxs],
+                scale=self._std[self._relative_mask]
             )
             
             # log transformations
             vals[self._logged] = 10**vals[self._logged]
-
-            # relative transformations
-            vals[self._relative_masks["*"][0]] *= vals[self._relative_masks["*"][1]]
-            vals[self._relative_masks["+"][0]] += vals[self._relative_masks["+"][1]]
         return vals
+    
+    def jax_guide(self):
+        num_params = self._numpyro_sample_arr.shape[1]
+
+        # Initialize loc to the parameter mean from the numpyro sample array
+        min_vals, max_vals, init_loc, init_scale = self._numpyro_sample_arr  # Assuming mean is at index 3
+
+        # Adjust initialization for relative parameters
+        relative_shifts = jnp.zeros(num_params)
+        relative_shifts = relative_shifts.at[self._relative_mask_jax].set(
+            init_loc[self._relative_idxs_jax]
+        )
+        init_loc = init_loc + relative_shifts
+
+        # Parameters for the guide distribution
+        loc = numpyro.param("loc", init_loc,
+                            constraint=dist.constraints.interval(min_vals, max_vals))
+
+        # For scale, we'll use a fraction of the range as initial value
+        scale = numpyro.param("scale", init_scale,
+                              constraint=dist.constraints.positive)
+
+        with numpyro.plate("params", num_params):
+            # Sample all parameters
+            samples = numpyro.sample(
+                "samples",
+                dist.TruncatedNormal(loc=loc, scale=scale, low=min_vals, high=max_vals)
+            )
     
     def transform(self, samples):
         """Transform relative and log-Gaussian samples
         from gaussian-sampled values.
         """
-        shuffle_idxs = [np.where(samples.columns == p)[0][0] for p in self._df['param']]
-        samples_shuffled = samples.iloc[:,shuffle_idxs] # now order matches
-        samples_shuffled.iloc[:,self._logged] = 10**samples_shuffled.iloc[:,self._logged]
-        
-        samples_numpy = samples_shuffled.to_numpy()
-        samples_shuffled.iloc[:,np.array(self._relative_masks["+"][0])] += samples_numpy[:,np.array(self._relative_masks["+"][1])]
-        samples_shuffled.iloc[:,np.array(self._relative_masks["*"][0])] *= samples_numpy[:,np.array(self._relative_masks["*"][1])]
-        return samples_shuffled
+        samples.loc[:,self._params[self._logged]] = 10**samples.loc[:,self._params[self._logged]]
+        return samples
             
     
 class SamplerResult(Base):
@@ -483,7 +558,7 @@ class Sampler(BaseEstimator):  # type: ignore
             X = self._X
         if formatter is None:
             formatter = Formatter()
-        for b in np.unique(X[:, 1]):
+        for b in photometry._unique_filters:
             if dense:
                 t_arr = np.linspace(np.min(X[:, 0]) - 20.0, np.max(X[:, 0]) + 20.0, 1000)
                 new_x = np.repeat(t_arr[np.newaxis, :].T, 3, axis=1).astype(object)

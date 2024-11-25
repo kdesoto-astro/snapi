@@ -17,13 +17,13 @@ class Group(Base):
         objs: Optional[Iterable[Base]] = None
     ):
         super().__init__()
-        
+                
         if objs is not None:
             for t in objs:
                 if hasattr(self, "_"+t.id):
                     continue
                 setattr(self, "_"+t.id, t) # will also check uniqueness
-                self.associated_objects["_"+t.id] = t.__class__.__name__
+                self.associated_objects.loc["_"+t.id] = {'type': t.__class__.__name__}
             
         self.update()
         
@@ -35,7 +35,7 @@ class Group(Base):
         """Update meta-dataframe."""    
         # keep pandas df for metadata        
         extracted_dicts = []
-        for t_id in self.associated_objects:
+        for t_id in self.associated_objects.index:
             extracted_dicts.append(self._extract_meta(getattr(self, t_id)))
             
         if len(extracted_dicts) == 0:
@@ -66,7 +66,7 @@ class Group(Base):
  
     def __iter__(self):
         """Iterates through transients."""
-        for obj_id in self.associated_objects:
+        for obj_id in self.associated_objects.index:
             yield self[obj_id[1:]]
             
     def add_col(self, col_name: str, attribute: str, attr_manipulation):
@@ -100,24 +100,24 @@ class Group(Base):
         """
         print(ids)
         if inplace:
-            for obj_id in self.associated_objects:
+            for obj_id in self.associated_objects.index:
                 if obj_id[1:] not in ids:
                     attr = getattr(self, obj_id)
                     del attr
-                    self.associated_objects.remove(obj_id)
+                    self.associated_objects.drop(index=obj_id, inplace=True)
                     
             self.update()
             return self
             
         else:
             group = self.__class__()
-            for obj_id in self.associated_objects:
+            for obj_id in self.associated_objects.index:
                 print(obj_id)
                 if (obj_id[1:] in ids) and hasattr(self, obj_id):
                     group_obj = getattr(self, obj_id)
                     print(group_obj)
                     setattr(group, obj_id, group_obj) # will also check uniqueness
-                    group.associated_objects[obj_id] = group_obj.__class__.__name__
+                    group.associated_objects.loc[obj_id] = {'type': group_obj.__class__.__name__}
                     
         group.update()
                     
@@ -168,7 +168,7 @@ class TransientGroup(Group):
                 if hasattr(new_obj, "_"+t.id):
                     continue
                 setattr(new_obj, "_"+t.id, t) # will also check uniqueness
-                new_obj.associated_objects["_"+t.id] = Transient.__name__
+                new_obj.associated_objects.loc["_"+t.id] = {'type': Transient.__name__}
                                 
         new_obj.update()
         return new_obj
@@ -240,7 +240,7 @@ class SamplerResultGroup(Group):
         if num_samples <= 0:
             raise ValueError("num_samples must be greater than zero")
         
-        for sr_id in self.associated_objects:
+        for sr_id in self.associated_objects.index:
             new_sr = self[sr_id]
             new_sr.fit_parameters = new_sr.fit_parameters.iloc[:num_samples,:]
             self[sr_id] = new_sr
@@ -260,7 +260,7 @@ class SamplerResultGroup(Group):
         tuple of np.ndarray
             Tuple containing oversampled features and labels.
         """
-        classes_filtered = {c: v for (c,v) in classes if c in self.associated_objects}
+        classes_filtered = {c: v for (c,v) in classes if c in self.associated_objects.index}
         labels_unique, counts = np.unique(
             classes_filtered.values(), return_counts=True
         )
@@ -268,7 +268,7 @@ class SamplerResultGroup(Group):
             l: majority_samples * round(max(counts) / c) for (l, c) in zip(labels_unique, counts)
         }
         
-        for sr_id in self.associated_objects:
+        for sr_id in self.associated_objects.index:
             new_sr = self[sr_id]
             sr_class = classes[sr_id]
             num_samples = samples_per_class[sr_class]
@@ -298,7 +298,7 @@ class SamplerResultGroup(Group):
         combined_df = None
         meta_cols = [x for x in self._cols if x[:-6] != 'median']
         
-        for sr_id in self.associated_objects:
+        for sr_id in self.associated_objects.index:
             sr = self[sr_id]
             df = sr.fit_parameters
             for m in meta_cols:

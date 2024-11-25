@@ -169,9 +169,9 @@ class Transient(Base):
     @photometry.setter
     def photometry(self, photometry) -> None:
         if photometry is None:
-            self.associated_objects.pop('_photometry', None)
+            self.associated_objects.drop(index='_photometry', inplace=True, errors='ignore')
         else:
-            self.associated_objects['_photometry'] = Photometry.__name__
+            self.associated_objects.loc['_photometry'] = {'type': Photometry.__name__}
         self._photometry = photometry
         
     @property
@@ -182,9 +182,9 @@ class Transient(Base):
     def spectroscopy(self, spectroscopy) -> None:
         self._spectroscopy = spectroscopy
         if spectroscopy is None:
-            self.associated_objects.pop('_spectroscopy', None)
+            self.associated_objects.drop(index='_spectroscopy', inplace=True, errors='ignore')
         else:
-            self.associated_objects['_spectroscopy'] = Spectroscopy.__name__
+            self.associated_objects.loc['_spectroscopy'] = {'type': Spectroscopy.__name__}
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:
         """Adds a set of light curves to the

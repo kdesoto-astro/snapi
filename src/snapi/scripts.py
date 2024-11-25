@@ -1,18 +1,28 @@
 # Scripts that bridge the transition between classes
+import os
+
+# Set JAX to use CPU
+os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+# Disable GPU visibility
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+# Set TensorFlow logging (which affects some JAX logging)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 from typing import Optional
 from functools import partial
 import itertools
 import copy
 import multiprocess as mp
 import logging
-import os
 import numpy as np
+import jax
 
 from .groups import TransientGroup, SamplerResultGroup
 from .analysis import Sampler, SamplerResult
 from .photometry import Photometry
     
-    
+jax.config.update('jax_platform_name', 'cpu')
+
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(processName)s - %(message)s',

@@ -21,7 +21,7 @@ class Base(ABC):
     @abstractmethod
     def __init__(self, *args, **kwargs) -> None:
         self._id: str = ""
-        self.associated_objects: dict[str, object] = {}
+        self.associated_objects: pd.DataFrame = pd.DataFrame([], columns=['type',], dtype=str)
         self.arr_attrs: list[str] = []
         self.meta_attrs: list[str] = []
 
@@ -65,16 +65,10 @@ class Base(ABC):
             path = "/" + type(self).__name__
             
         mode = "a" if append else "w"
-        
-        obj_keys = []
-        obj_values = []
-        for (k, v) in self.associated_objects.items():
-            obj_keys.append(k)
-            obj_values.append(v)
 
         # Save DataFrame and attributes to HDF5
         with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
-            store.put(path, pd.Series([]))
+            store.put(path, self.associated_objects)
                     
             for arr_attr in self.arr_attrs:
                 attr = getattr(self, arr_attr)
@@ -97,13 +91,11 @@ class Base(ABC):
             # store attributes
             setattr(attrs, 'arr_attrs', self.arr_attrs)
             setattr(attrs, 'meta_attrs', self.meta_attrs)
-            setattr(attrs, 'assoc_keys', obj_keys)
-            setattr(attrs, 'assoc_types', obj_values)
             
 
         # Save associated objects
-        for assoc_obj in self.associated_objects:
-            getattr(self, assoc_obj).save(file_name = file_name, path = path + f"/{assoc_obj}", append=True)
+        for assoc_name in self.associated_objects.index:
+            getattr(self, assoc_name).save(file_name = file_name, path = path + f"/{assoc_name}", append=True)
 
     @classmethod
     def load(
@@ -126,15 +118,13 @@ class Base(ABC):
         
         
         with pd.HDFStore(file_name) as store:
+            new_obj.associated_objects = store[path]
             # unload attributes first
             attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
             
             # get info about meta, array attributes, and associated objects
             new_obj.arr_attrs = attr_dict['arr_attrs']
             new_obj.meta_attrs = attr_dict['meta_attrs']
-            assoc_obj_keys = attr_dict['assoc_keys']
-            assoc_obj_types = attr_dict['assoc_types']
-            new_obj.associated_objects = {k: t for (k,t) in zip(assoc_obj_keys, assoc_obj_types)}
             
             # extract meta values
             for a_key in new_obj.meta_attrs:
@@ -145,9 +135,9 @@ class Base(ABC):
                     setattr(new_obj, attr_name, attr)
                 else:
                     setattr(new_obj, attr_name, attr.to_numpy())
-            for attr_name in new_obj.associated_objects: # associated object load
-                subtype = str_to_class(new_obj.associated_objects[attr_name])
-                setattr(new_obj, attr_name, subtype.load(file_name, f"{path}/{attr_name}"))
+            for i, obj_row in new_obj.associated_objects.iterrows(): # associated object load
+                subtype = str_to_class(obj_row['type'])
+                setattr(new_obj, obj_row.name, subtype.load(file_name, f"{path}/{obj_row.name}"))
             new_obj.update()
             
             return new_obj
