@@ -401,9 +401,11 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         dense_arr[:, :, 0] = dense_times
         dense_arr[:, :, 3] = 1  # interpolated mask
 
-        for filt_int in np.unique(gp_df_keep['filter']):
-            dense_arr[filt_int, :, 1] = pred[x_pred[:, 1] == filt_int]
-            dense_arr[filt_int, :, 2] = np.sqrt(pred_var[x_pred[:, 1] == filt_int])
+        for i, filt_int in enumerate(
+            np.unique(gp_df_keep['filter'])
+        ):
+            dense_arr[i, :, 1] = pred[x_pred[:, 1] == filt_int]
+            dense_arr[i, :, 2] = np.sqrt(pred_var[x_pred[:, 1] == filt_int])
 
         return dense_arr, gp_df_keep
 
@@ -467,19 +469,19 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
             gp_df, stacked_data, max_spacing
         )
 
-        for filt_int in np.unique(gp_df_keep['filter']):
+        for i, filt_int in enumerate(np.unique(gp_df_keep['filter'])):
             sub_series = gp_df_keep.loc[gp_df_keep['filter'] == filt_int]
 
             # fill in true values
-            dense_arr[filt_int, sub_series['idx_map'], 1:3] = sub_series[['val', 'err']]
-            dense_arr[filt_int, sub_series['idx_map'], 3] = 0
-            dense_arr[filt_int, :, 4] = sub_series["filt_center"].iloc[0]
-            dense_arr[filt_int, :, 5] = sub_series["filt_width"].iloc[0]
+            dense_arr[i, sub_series['idx_map'], 1:3] = sub_series[['val', 'err']]
+            dense_arr[i, sub_series['idx_map'], 3] = 0
+            dense_arr[i, :, 4] = sub_series["filt_center"].iloc[0]
+            dense_arr[i, :, 5] = sub_series["filt_width"].iloc[0]
             
             # fix broken errors - usually if no points in that band
-            mask = dense_arr[filt_int, :, 2] <= 0.0
-            dense_arr[filt_int, mask, 2] = error_mask
-            dense_arr[filt_int, mask, 3] = 1
+            mask = dense_arr[i, :, 2] <= 0.0
+            dense_arr[i, mask, 2] = error_mask
+            dense_arr[i, mask, 3] = 1
 
         dense_arr[:,:,1] += corr
         return dense_arr
