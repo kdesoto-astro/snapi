@@ -33,7 +33,9 @@ class TimeSeries(Base):
         self._flip_name_map()
         self._phased = phased
         if time_series is None: # initialize empty
-            self._ts = pd.DataFrame({col_name: pd.Series(dtype=dtype) for col_name, dtype in self._ts_cols.items()})
+            self._ts = pd.DataFrame(
+                {col_name: pd.Series(dtype=dtype) for col_name, dtype in self._ts_cols.items()},
+            )
         elif isinstance(time_series, pd.DataFrame):
             if validate:
                 valid_keys = np.intersect1d(time_series.columns, list(self._alias_map.keys()), assume_unique=True)

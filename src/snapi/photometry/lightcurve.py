@@ -33,12 +33,12 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
     (b) sorted by time.
     """
     _ts_cols = {
-        "flux": np.float64,
-        "flux_error": np.float64,
-        "mag": np.float64,
-        "mag_error": np.float64,
-        "zeropoint": np.float64,
-        "upper_limit": bool
+        "flux": "float32",
+        "flux_error": "float32",
+        "mag": "float32",
+        "mag_error": "float32",
+        "zeropoint": "float32",
+        "upper_limit": "boolean"
     }
     
     _name_map = {

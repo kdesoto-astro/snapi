@@ -98,7 +98,6 @@ class Group(Base):
     def filter(self, ids: Iterable[str], inplace: bool=False) -> Any:
         """Return copy of object but only with ids in 'ids'.
         """
-        print(ids)
         if inplace:
             for obj_id in self.associated_objects.index:
                 if obj_id[1:] not in ids:
@@ -112,10 +111,8 @@ class Group(Base):
         else:
             group = self.__class__()
             for obj_id in self.associated_objects.index:
-                print(obj_id)
                 if (obj_id[1:] in ids) and hasattr(self, obj_id):
                     group_obj = getattr(self, obj_id)
-                    print(group_obj)
                     setattr(group, obj_id, group_obj) # will also check uniqueness
                     group.associated_objects.loc[obj_id] = {'type': group_obj.__class__.__name__}
                     
@@ -153,14 +150,15 @@ class TransientGroup(Group):
         grabs subset from within names.
         """
         all_fns = glob.glob(
-            os.path.join(dir_path, "*.h5")
+            os.path.join(dir_path, "*/")
         )
+
         new_obj = cls()
         for i, fn in enumerate(all_fns):
             if i % 100 == 0:
                 print(f"Added transient {i} out of {len(all_fns)}")
             try:
-                t = Transient.load(fn, path="/Transient")
+                t = Transient.load(fn)
             except:
                 print(f"{fn.split('/')[-1]} skipped: unable to load")
                 continue
@@ -221,10 +219,10 @@ class SamplerResultGroup(Group):
         """
         new_obj = cls()
         all_fns = glob.glob(
-            os.path.join(dir_path, "*.h5")
+            os.path.join(dir_path, "*")
         )
         for fn in all_fns:
-            t = SamplerResult.load(fn, path='/Transient')
+            t = SamplerResult.load(fn)
             if hasattr(new_obj, "_"+t.id):
                 continue
             setattr(new_obj, "_"+t.id, t) # will also check uniqueness

@@ -21,9 +21,9 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
 
     _ts_cols = {
         **LightCurve._ts_cols,
-        "filter": str,
-        "filt_center": np.float64,
-        "filt_width": np.float64
+        "filter": "string",
+        "filt_center": "float32",
+        "filt_width": "float32"
     }
     
     _name_map = {

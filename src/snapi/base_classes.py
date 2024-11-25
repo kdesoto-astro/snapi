@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
+import os
 import dill
-import time
 from typing import TypeVar, Optional, Any
 import copy
 from matplotlib.axes import Axes
-from astropy.io.misc import hdf5
 import pandas as pd
+import pyarrow.feather as feather
+#import msgpack
 
 from .utils import list_datasets, str_to_class
 
@@ -21,7 +22,12 @@ class Base(ABC):
     @abstractmethod
     def __init__(self, *args, **kwargs) -> None:
         self._id: str = ""
-        self.associated_objects: pd.DataFrame = pd.DataFrame([], columns=['type',], dtype=str)
+        self.associated_objects = pd.DataFrame(
+            columns=['type',],
+            index=pd.Index([], dtype='string'),
+            dtype='string'
+        )
+
         self.arr_attrs: list[str] = []
         self.meta_attrs: list[str] = []
 
@@ -49,114 +55,88 @@ class Base(ABC):
         except Exception as exc:
             raise ValueError(f"Input {iid} could not be casted to a string!") from exc
         
-    def save(self, file_name: str, path: Optional[str] = None, append: bool = False) -> None:
-        """Save LightCurve object as an HDF5 file.
+    def save(self, file_name: str, append: bool = False) -> None:
+        """Save LightCurve object using Apache Arrow.
 
         Parameters
         ----------
         file_name : str
-            Name of file to save.
+            Name of file to save (will be treated as a directory).
         path : str
-            HDF5 path to save Measurement.
+            Path within the Arrow structure to save Measurement.
         append : bool
-            Whether to append to existing file.
+            Whether to append to existing file (handled through directory structure).
         """
-        if path is None:
-            path = "/" + type(self).__name__
-            
-        mode = "a" if append else "w"
 
-        # Save DataFrame and attributes to HDF5
-        with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
-            t1 = time.time()
-            store.put(path, self.associated_objects)
-            t2 = time.time()
-            #print(self.__class__.__name__, "save associated objects df", t2 - t1)
-                    
-            for arr_attr in self.arr_attrs:
-                attr = getattr(self, arr_attr)
-                if isinstance(attr, pd.DataFrame):
-                    store.put(f"{path}/{arr_attr}", attr)
-                else:
-                    store.put(f"{path}/{arr_attr}", pd.Series(attr))
-            t3 = time.time()
-            #print(self.__class__.__name__, "save arr attrs", t3 - t2)
-                                            
-        # Save any meta attrs
-        with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
-            attrs = store.get_storer(path).attrs
-            for meta_attr in self.meta_attrs:
-                a = getattr(self, meta_attr)
-                try:
-                    setattr(attrs, meta_attr, a)
-                except:
-                    a_enc = dill.dumps(self._cols)
-                    setattr(attrs, meta_attr, a_enc)
-                    
-            # store attributes
-            setattr(attrs, 'arr_attrs', self.arr_attrs)
-            setattr(attrs, 'meta_attrs', self.meta_attrs)
-            
-            t4 = time.time()
-            #print(self.__class__.__name__, "save meta attrs", t4 - t3)
-            
+        # Ensure the directory exists
+        os.makedirs(file_name, exist_ok=True)
+                
+        feather.write_feather(
+            self.associated_objects,
+            f"{file_name}/associated_objects.feather",
+            compression='uncompressed',
+        )
+
+        # Save array attributes
+        for arr_attr in self.arr_attrs:
+            attr = getattr(self, arr_attr)
+            if not isinstance(attr, pd.DataFrame):
+                attr = pd.Series(attr).to_frame()
+            feather.write_feather(
+                attr,
+                f"{file_name}/{arr_attr}.feather",
+                compression='uncompressed',
+            )
+
+        # Save meta attributes using msgpack
+        meta_data = {attr: getattr(self, attr) for attr in self.meta_attrs}
+        meta_data['arr_attrs'] = self.arr_attrs
+        meta_data['meta_attrs'] = self.meta_attrs
+
+        with open(f"{file_name}/meta.dill", 'wb') as f:
+            dill.dump(meta_data, f)
 
         # Save associated objects
         for assoc_name in self.associated_objects.index:
-            getattr(self, assoc_name).save(file_name = file_name, path = path + f"/{assoc_name}", append=True)
-
+            getattr(self, assoc_name).save(file_name=f"{file_name}/{assoc_name}", append=True)
+            
     @classmethod
-    def load(
-        cls: Any,
-        file_name: str,
-        path: Optional[str] = None,
-    ) -> Any:
-        """Load LightCurve from saved HDF5 table. Automatically
-        extracts feature information.
-        """
+    def load(cls: Any, file_name: str) -> Any:
+        """Load LightCurve from saved Arrow structure."""
         new_obj = cls()
 
-        if path is None:
-            path = "/" + cls.__name__
-            with pd.HDFStore(file_name) as store:
-                try:
-                    store[path]
-                except:
-                    raise ValueError(f"Default path {path} does not exist in file, please manually set path.")
-        
-        
-        with pd.HDFStore(file_name) as store:
-            t1 = time.time()
-            new_obj.associated_objects = store[path]
-            t2 = time.time()
-            #print(new_obj.__class__.__name__, "load assoc objects", t2 - t1)
-            # unload attributes first
-            attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
+        try:
+            # Extract associated_objects
+            new_obj.associated_objects = feather.read_feather(f"{file_name}/associated_objects.feather")
+
+            # Load meta attributes
+            with open(f"{file_name}/meta.dill", 'rb') as f:
+                meta_data = dill.load(f)
+
+            new_obj.arr_attrs = meta_data.pop('arr_attrs')
+            new_obj.meta_attrs = meta_data.pop('meta_attrs')
+
+            for attr, value in meta_data.items():
+                setattr(new_obj, attr, value)
             
-            # get info about meta, array attributes, and associated objects
-            new_obj.arr_attrs = attr_dict['arr_attrs']
-            new_obj.meta_attrs = attr_dict['meta_attrs']
-            
-            # extract meta values
-            for a_key in new_obj.meta_attrs:
-                setattr(new_obj, a_key, attr_dict[a_key])
-            for attr_name in new_obj.arr_attrs: # array attribute
-                attr = store[f"{path}/{attr_name}"]
-                if isinstance(attr, pd.DataFrame):
-                    setattr(new_obj, attr_name, attr)
+            for arr_attr in new_obj.arr_attrs:
+                attr = feather.read_feather(f"{file_name}/{arr_attr}.feather")
+                if attr.ndim == 1:
+                    setattr(new_obj, arr_attr, attr.to_numpy())
                 else:
-                    setattr(new_obj, attr_name, attr.to_numpy())
-            t3 = time.time()
-            #print(new_obj.__class__.__name__, "load meta", t3 - t2)
-            for i, obj_row in new_obj.associated_objects.iterrows(): # associated object load
+                    setattr(new_obj, arr_attr, attr)
+                                
+            # Load associated objects
+            for i, obj_row in new_obj.associated_objects.iterrows():
                 subtype = str_to_class(obj_row['type'])
-                setattr(new_obj, obj_row.name, subtype.load(file_name, f"{path}/{obj_row.name}"))
-                
-            t4 = time.time()
+                setattr(new_obj, obj_row.name, subtype.load(f"{file_name}/{obj_row.name}"))
+
             new_obj.update()
-            #print(new_obj.__class__.__name__, "update", time.time() - t4)
-            
-            return new_obj
+
+        except FileNotFoundError:
+            raise ValueError(f"Path {file_name}/{path} does not exist.")
+
+        return new_obj
 
 
 class Plottable(Base):
