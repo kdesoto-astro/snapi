@@ -33,12 +33,12 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
     (b) sorted by time.
     """
     _ts_cols = {
-        "flux": "float32",
-        "flux_error": "float32",
-        "mag": "float32",
-        "mag_error": "float32",
-        "zeropoint": "float32",
-        "upper_limit": "boolean"
+        "flux": float,
+        "flux_error": float,
+        "mag": float,
+        "mag_error": float,
+        "zeropoint": float,
+        "upper_limit": float
     }
     
     _name_map = {
@@ -104,7 +104,8 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
         super().update()
-        self._complete()
+        if self._ts is not None:
+            self._complete()
         
     def _complete(self, force_update_mags: bool = False, force_update_fluxes: bool = False) -> None:
         """Given zeropoints, fills in missing apparent

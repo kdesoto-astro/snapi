@@ -17,6 +17,7 @@ class Group(Base):
         objs: Optional[Iterable[Base]] = None
     ):
         super().__init__()
+        self._initialize_assoc_objects()
                 
         if objs is not None:
             for t in objs:

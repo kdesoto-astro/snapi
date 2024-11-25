@@ -33,9 +33,7 @@ class TimeSeries(Base):
         self._flip_name_map()
         self._phased = phased
         if time_series is None: # initialize empty
-            self._ts = pd.DataFrame(
-                {col_name: pd.Series(dtype=dtype) for col_name, dtype in self._ts_cols.items()},
-            )
+            self._ts = None
         elif isinstance(time_series, pd.DataFrame):
             if validate:
                 valid_keys = np.intersect1d(time_series.columns, list(self._alias_map.keys()), assume_unique=True)
@@ -66,16 +64,16 @@ class TimeSeries(Base):
                     if k not in self._ts.columns:
                         self._ts[k] = False if self._ts_cols[k] == bool else np.nan
                     self._ts[k] = self._ts[k].astype(v)
-                                            
+                    
+                self._ts.index.name = "phase" if self._phased else "mjd"
+                self.update()
+
             else:
                 self._ts = time_series.copy()
         else:
             raise TypeError("Invalid data type for time_series. Must be None or pd.DataFrame")
         
-        if validate:
-            self._ts.index.name = "phase" if self._phased else "mjd"
-            self.update()
-            
+        
         self._rng = np.random.default_rng()
 
         self.arr_attrs.append("_ts")
@@ -106,8 +104,11 @@ class TimeSeries(Base):
         
     def _sort(self):
         """Sort light curve by time and set column order."""
+        if self._ts is None:
+            return
         self._ts.sort_index(inplace=True)
         self._ts.sort_index(axis=1, inplace=True)
+        return
         
     @property
     def is_phased(self) -> bool:
@@ -174,10 +175,10 @@ class TimeSeries(Base):
         
     def add_observations(self, rows: list[dict[str, Any]]) -> None:
         """Add rows to existing timeseries."""
-        if (len(self._ts) == 0 and "phase" in row):
+        if (self._ts is None and "phase" in row):
             index_name = "phase"
             self._phased = True
-        elif (len(self._ts) == 0 and "mjd" in row):
+        elif (self._ts is None and "mjd" in row):
             index_name = "mjd"
             self._phased = False
         elif self._phased:
@@ -198,7 +199,10 @@ class TimeSeries(Base):
             new_df = pd.DataFrame.from_records(rows, index=new_index_dt)
             new_df.drop(columns="mjd", inplace=True)
             new_df.index.name = "mjd"
-        self._ts = pd.concat([self._ts, new_df], copy=False)
+        if self._ts is None:
+            self._ts = new_df
+        else:
+            self._ts = pd.concat([self._ts, new_df], copy=False)
         self.update()
         
     @property

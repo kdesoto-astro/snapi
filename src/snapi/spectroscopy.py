@@ -27,6 +27,8 @@ class Spectroscopy(Plottable):
         self._spectra = []
         if spectra is None:
             spectra = []
+        else:
+            self._initialize_assoc_objects()
         for spec in spectra:
             if not isinstance(spec, Spectrum):
                 raise TypeError("All elements of 'spectra' must be a Spectrum!")
@@ -147,6 +149,7 @@ class Spectroscopy(Plottable):
     def add_spectrum(self, spec: Spectrum) -> None:
         """Add spectrum to the collection of spectra."""
         # Find the index where the spectrum should be inserted based on its time
+        self._initialize_assoc_objects()
         self.associated_objects.loc[str(spec.spectrometer)] = {'type': Spectrum.__name__}
         setattr(self, str(spec.spectrometer), spec.copy())
         self._spectra.append(str(spec.spectrometer))

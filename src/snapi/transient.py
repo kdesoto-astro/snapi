@@ -33,6 +33,7 @@ class Transient(Base):
         # host: HostGalaxy = None,
     ) -> None:
         super().__init__()
+        
         if iid is None:
             self.id = str(id(self))
         else:
@@ -62,7 +63,7 @@ class Transient(Base):
         self._choose_main_name()
         # self.host = host
         
-        self.meta_attrs.extend(['id','_ra','_dec','internal_names','spec_class','redshift'])
+        self.meta_attrs = ['id','_ra','_dec','internal_names','spec_class','redshift']
 
     def _choose_main_name(self) -> None:
         """Chooses the main name for the transient."""
@@ -169,8 +170,10 @@ class Transient(Base):
     @photometry.setter
     def photometry(self, photometry) -> None:
         if photometry is None:
-            self.associated_objects.drop(index='_photometry', inplace=True, errors='ignore')
+            if self.associated_objects is not None:
+                self.associated_objects.drop(index='_photometry', inplace=True, errors='ignore')
         else:
+            self._initialize_assoc_objects()
             self.associated_objects.loc['_photometry'] = {'type': Photometry.__name__}
         self._photometry = photometry
         
@@ -182,8 +185,10 @@ class Transient(Base):
     def spectroscopy(self, spectroscopy) -> None:
         self._spectroscopy = spectroscopy
         if spectroscopy is None:
-            self.associated_objects.drop(index='_spectroscopy', inplace=True, errors='ignore')
+            if self.associated_objects is not None:
+                self.associated_objects.drop(index='_spectroscopy', inplace=True, errors='ignore')
         else:
+            self._initialize_assoc_objects()
             self.associated_objects.loc['_spectroscopy'] = {'type': Spectroscopy.__name__}
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import os
+import time
 import dill
 from typing import TypeVar, Optional, Any
 import copy
@@ -22,14 +23,17 @@ class Base(ABC):
     @abstractmethod
     def __init__(self, *args, **kwargs) -> None:
         self._id: str = ""
-        self.associated_objects = pd.DataFrame(
-            columns=['type',],
-            index=pd.Index([], dtype='string'),
-            dtype='string'
-        )
-
         self.arr_attrs: list[str] = []
         self.meta_attrs: list[str] = []
+        self.associated_objects = None
+        
+    def _initialize_assoc_objects(self) -> None:
+        if self.associated_objects is None:
+            self.associated_objects = pd.DataFrame(
+                columns=['type',],
+                index=pd.Index([], dtype='string'),
+                dtype='string'
+            )
 
     def copy(self: BaseT) -> BaseT:
         """Return a deep copy of the object."""
@@ -70,12 +74,13 @@ class Base(ABC):
 
         # Ensure the directory exists
         os.makedirs(file_name, exist_ok=True)
-                
-        feather.write_feather(
-            self.associated_objects,
-            f"{file_name}/associated_objects.feather",
-            compression='uncompressed',
-        )
+        
+        if self.associated_objects is not None:
+            feather.write_feather(
+                self.associated_objects,
+                f"{file_name}/associated_objects.feather",
+                compression='uncompressed',
+            )
 
         # Save array attributes
         for arr_attr in self.arr_attrs:
@@ -90,52 +95,70 @@ class Base(ABC):
 
         # Save meta attributes using msgpack
         meta_data = {attr: getattr(self, attr) for attr in self.meta_attrs}
-        meta_data['arr_attrs'] = self.arr_attrs
-        meta_data['meta_attrs'] = self.meta_attrs
+        
+        if len(self.arr_attrs) > 0:
+            meta_data['arr_attrs'] = self.arr_attrs
+        if len(self.meta_attrs) > 0:
+            meta_data['meta_attrs'] = self.meta_attrs
 
         with open(f"{file_name}/meta.dill", 'wb') as f:
             dill.dump(meta_data, f)
 
         # Save associated objects
-        for assoc_name in self.associated_objects.index:
-            getattr(self, assoc_name).save(file_name=f"{file_name}/{assoc_name}", append=True)
+        if self.associated_objects is not None:
+            for assoc_name in self.associated_objects.index:
+                getattr(self, assoc_name).save(file_name=f"{file_name}/{assoc_name}", append=True)
             
     @classmethod
     def load(cls: Any, file_name: str) -> Any:
         """Load LightCurve from saved Arrow structure."""
+        #t_overall = time.perf_counter()
         new_obj = cls()
+        #print(new_obj.__class__.__name__, "init", time.perf_counter() - t_overall)
 
         try:
+            #t1 = time.perf_counter()
             # Extract associated_objects
-            new_obj.associated_objects = feather.read_feather(f"{file_name}/associated_objects.feather")
+            if os.path.exists(f"{file_name}/associated_objects.feather"):
+                new_obj.associated_objects = feather.read_feather(f"{file_name}/associated_objects.feather")
+            else:
+                new_obj.associated_objects = None
+            #print(new_obj.__class__.__name__, "assoc", time.perf_counter() - t1)
 
+            #t1 = time.perf_counter()
             # Load meta attributes
             with open(f"{file_name}/meta.dill", 'rb') as f:
                 meta_data = dill.load(f)
 
-            new_obj.arr_attrs = meta_data.pop('arr_attrs')
-            new_obj.meta_attrs = meta_data.pop('meta_attrs')
-
             for attr, value in meta_data.items():
                 setattr(new_obj, attr, value)
+            #print(new_obj.__class__.__name__, "meta", time.perf_counter() - t1)
             
+            #t1 = time.perf_counter()
             for arr_attr in new_obj.arr_attrs:
                 attr = feather.read_feather(f"{file_name}/{arr_attr}.feather")
                 if attr.ndim == 1:
                     setattr(new_obj, arr_attr, attr.to_numpy())
                 else:
                     setattr(new_obj, arr_attr, attr)
-                                
+            #print(new_obj.__class__.__name__, "arr", time.perf_counter() - t1)
+            
             # Load associated objects
-            for i, obj_row in new_obj.associated_objects.iterrows():
-                subtype = str_to_class(obj_row['type'])
-                setattr(new_obj, obj_row.name, subtype.load(f"{file_name}/{obj_row.name}"))
+            if new_obj.associated_objects is not None:
+                for i, obj_row in new_obj.associated_objects.iterrows():
+                    #t1 = time.perf_counter()
+                    subtype = str_to_class(obj_row['type'])
+                    #print(new_obj.__class__.__name__, "subtype", time.perf_counter() - t1)
+                    setattr(new_obj, obj_row.name, subtype.load(f"{file_name}/{obj_row.name}"))
 
+            #t1 = time.perf_counter()
             new_obj.update()
+            #print(new_obj.__class__.__name__, "update", time.perf_counter() - t1)
 
         except FileNotFoundError:
             raise ValueError(f"Path {file_name}/{path} does not exist.")
-
+        
+        #print(time.perf_counter() - t_overall)
         return new_obj
 
 

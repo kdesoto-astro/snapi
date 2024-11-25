@@ -21,9 +21,9 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
 
     _ts_cols = {
         **LightCurve._ts_cols,
-        "filter": "string",
-        "filt_center": "float32",
-        "filt_width": "float32"
+        "filter": str,
+        "filt_center": float,
+        "filt_width": float
     }
     
     _name_map = {
@@ -53,8 +53,9 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
     
     def _sort(self):
         """Sort light curve by time."""
-        self._ts.sort_values(by=[self._ts.index.name, "filter"], inplace=True)
-        self._ts.sort_index(axis=1, inplace=True)
+        if self._ts is not None:
+            self._ts.sort_values(by=[self._ts.index.name, "filter"], inplace=True)
+            self._ts.sort_index(axis=1, inplace=True)
     
     @classmethod
     def from_light_curves(cls, lcs: list[LightCurve], phased: Optional[bool] = None):
@@ -77,7 +78,10 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
-        self._unique_filters = self._ts["filter"].unique()
+        if self._ts is None:
+            self._unique_filters = []
+        else:
+            self._unique_filters = self._ts["filter"].unique()
         self._sort()
     
     def _filter_single(self, filter_name: str) -> pd.DataFrame:
