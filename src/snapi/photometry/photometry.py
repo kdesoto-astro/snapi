@@ -384,7 +384,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         gp_df_keep = gp_df.loc[gp_df['idx_map'] < max_n]
         dense_times = gp_df['time'].iloc[keep_idxs[:max_n]]
 
-        stacked_data_keep = stacked_data[idx_map < max_n]
+        stacked_data_keep = stacked_data[gp_df['idx_map'] < max_n]
         
         gaussian_process = generate_gp(gp_df_keep['val'].to_numpy(), gp_df_keep['err'].to_numpy(), stacked_data_keep)
         
@@ -459,6 +459,9 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         # map unique filts to integer
 
         stacked_data = np.vstack([gp_df['time'], gp_df['filter']]).T
+        
+        #print(len(gp_df))
+        #print(stacked_data.shape)
 
         dense_arr, gp_df_keep = self._dense_lc_helper(
             gp_df, stacked_data, max_spacing

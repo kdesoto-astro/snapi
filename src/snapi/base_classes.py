@@ -68,7 +68,10 @@ class Base(ABC):
 
         # Save DataFrame and attributes to HDF5
         with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
+            t1 = time.time()
             store.put(path, self.associated_objects)
+            t2 = time.time()
+            #print(self.__class__.__name__, "save associated objects df", t2 - t1)
                     
             for arr_attr in self.arr_attrs:
                 attr = getattr(self, arr_attr)
@@ -76,6 +79,8 @@ class Base(ABC):
                     store.put(f"{path}/{arr_attr}", attr)
                 else:
                     store.put(f"{path}/{arr_attr}", pd.Series(attr))
+            t3 = time.time()
+            #print(self.__class__.__name__, "save arr attrs", t3 - t2)
                                             
         # Save any meta attrs
         with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
@@ -91,6 +96,9 @@ class Base(ABC):
             # store attributes
             setattr(attrs, 'arr_attrs', self.arr_attrs)
             setattr(attrs, 'meta_attrs', self.meta_attrs)
+            
+            t4 = time.time()
+            #print(self.__class__.__name__, "save meta attrs", t4 - t3)
             
 
         # Save associated objects
@@ -118,7 +126,10 @@ class Base(ABC):
         
         
         with pd.HDFStore(file_name) as store:
+            t1 = time.time()
             new_obj.associated_objects = store[path]
+            t2 = time.time()
+            #print(new_obj.__class__.__name__, "load assoc objects", t2 - t1)
             # unload attributes first
             attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
             
@@ -135,10 +146,15 @@ class Base(ABC):
                     setattr(new_obj, attr_name, attr)
                 else:
                     setattr(new_obj, attr_name, attr.to_numpy())
+            t3 = time.time()
+            #print(new_obj.__class__.__name__, "load meta", t3 - t2)
             for i, obj_row in new_obj.associated_objects.iterrows(): # associated object load
                 subtype = str_to_class(obj_row['type'])
                 setattr(new_obj, obj_row.name, subtype.load(file_name, f"{path}/{obj_row.name}"))
+                
+            t4 = time.time()
             new_obj.update()
+            #print(new_obj.__class__.__name__, "update", time.time() - t4)
             
             return new_obj
 
