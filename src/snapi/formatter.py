@@ -1,7 +1,7 @@
 """Stores all formatting information in an object for consistent
 formatting across plots."""
 import re
-import warnings
+import logging
 from typing import Optional, Union
 
 import colorcet as cc  # pylint: disable=import-error
@@ -14,11 +14,7 @@ from matplotlib.text import Annotation
 from matplotlib.ticker import AutoMinorLocator
 from numpy.typing import NDArray
 
-warnings.filterwarnings(
-    "ignore", category=UserWarning,
-    message="findfont: Font family '{.*}' not found."
-)
-
+logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
 
 def darken_colormap(colormap: Union[list[str], NDArray[np.str_]]) -> NDArray[np.str_]:
     """Darken the colors in a given colormap."""
