@@ -156,7 +156,7 @@ class TransientGroup(Group):
 
         new_obj = cls()
         for i, fn in enumerate(all_fns):
-            if i % 100 == 0:
+            if i % 1000 == 0:
                 print(f"Added transient {i} out of {len(all_fns)}")
             try:
                 t = Transient.load(fn)

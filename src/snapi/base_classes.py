@@ -189,6 +189,7 @@ class Measurement(Base):
             raise TypeError("filt must be None or an Observer subclass object!")
         self._observer = observer
         if self._observer is not None:
+            self._initialize_assoc_objects()
             self.associated_objects['_observer'] = observer.__class__.__name__
 
 

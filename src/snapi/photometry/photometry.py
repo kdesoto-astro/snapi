@@ -240,7 +240,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         light_curve: LightCurve
             the light curve to add to the set of photometry
         """
-        if len(self._ts) == 0:
+        if self._ts is None:
             self._phased = light_curve.is_phased
         if self._phased and not light_curve.is_phased:
             raise ValueError("light_curve must be phased before adding to phased photometry.")
@@ -272,7 +272,7 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
                     )
                     new_phot.update()
                     return new_phot
-        if len(self._ts) == 0:
+        if self._ts is None:
             new_ts = light_curve.full_time_series
         else:
             new_ts = pd.concat(
