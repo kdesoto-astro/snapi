@@ -1,6 +1,7 @@
 """Stores all formatting information in an object for consistent
 formatting across plots."""
 import re
+import warnings
 from typing import Optional, Union
 
 import colorcet as cc  # pylint: disable=import-error
@@ -12,6 +13,11 @@ from matplotlib.axes import Axes
 from matplotlib.text import Annotation
 from matplotlib.ticker import AutoMinorLocator
 from numpy.typing import NDArray
+
+warnings.filterwarnings(
+    "ignore", category=UserWarning,
+    message="findfont: Font family '{.*}' not found."
+)
 
 
 def darken_colormap(colormap: Union[list[str], NDArray[np.str_]]) -> NDArray[np.str_]:
