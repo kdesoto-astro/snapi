@@ -38,7 +38,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         "mag": float,
         "mag_error": float,
         "zeropoint": float,
-        "upper_limit": float
+        "upper_limit": bool
     }
     
     _name_map = {
