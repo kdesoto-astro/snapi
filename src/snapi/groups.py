@@ -3,6 +3,7 @@ import glob
 import os
 
 import pandas as pd
+import numpy as np
 
 from .analysis.sampler import SamplerResult
 from .base_classes import Base
@@ -70,13 +71,13 @@ class Group(Base):
         for obj_id in self.associated_objects.index:
             yield self[obj_id[1:]]
             
-    def add_col(self, col_name: str, attribute: str, attr_manipulation):
+    def add_col(self, col_name: str, attr_manipulation):
         """Add column to meta dataframe. Takes in name for column and
         function to apply to the object to retrieve the attribute.
         """
         if col_name in self._cols:
             raise ValueError("column name already in metadata")
-        self._cols[col_name] = (attribute, attr_manipulation)
+        self._cols[col_name] = attr_manipulation
         self.update()
         
     def _extract_meta(self, obj):
@@ -156,7 +157,7 @@ class TransientGroup(Group):
 
         new_obj = cls()
         for i, fn in enumerate(all_fns):
-            if i % 1000 == 0:
+            if i % 250 == 0:
                 print(f"Added transient {i} out of {len(all_fns)}")
             try:
                 t = Transient.load(fn)
@@ -175,12 +176,12 @@ class TransientGroup(Group):
     def add_binary_class(self, target_label: str, class_attr: str = 'spec_class'):
         """Convert spec_class to a binary classification
         problem."""
-        self._cols[f"binary_class_{target_label}"] = lambda x: getattr(x, class_attr) == target_label
+        self.add_col(f"binary_class_{target_label}", lambda x: getattr(x, class_attr) == target_label)
         
     def canonicalize_classes(self, canonicalize_func: Callable, class_attr: str = 'spec_class'):
         """Convert labels to canon labels.
         """
-        self._cols[f"canonical_class"] = lambda x: canonicalize_func(getattr(x, class_attr))
+        self.add_col("canonical_class", lambda x: canonicalize_func(getattr(x, class_attr)))
 
         
 class SamplerResultGroup(Group):
@@ -208,7 +209,7 @@ class SamplerResultGroup(Group):
             for fp in param_names:
                 self._cols[f"{fp}_median"] = lambda x, col=fp: x.fit_parameters[col].dropna().median()
                 
-        self._cols['score'] = lambda x: x.score
+        self._cols['score_median'] = lambda x: x.score.dropna().median()
         self._cols['sampler'] = lambda x: x.sampler
         
         super().__init__(sampler_results)
@@ -259,21 +260,21 @@ class SamplerResultGroup(Group):
         tuple of np.ndarray
             Tuple containing oversampled features and labels.
         """
-        classes_filtered = {c: v for (c,v) in classes if c in self.associated_objects.index}
+        classes_filtered = {c: v for (c,v) in classes.items() if "_"+c in self.associated_objects.index}
         labels_unique, counts = np.unique(
-            classes_filtered.values(), return_counts=True
+            list(classes_filtered.values()), return_counts=True
         )
         samples_per_class = {
             l: majority_samples * round(max(counts) / c) for (l, c) in zip(labels_unique, counts)
         }
         
         for sr_id in self.associated_objects.index:
-            new_sr = self[sr_id]
-            sr_class = classes[sr_id]
+            new_sr = self[sr_id[1:]]
+            sr_class = classes_filtered[sr_id[1:]]
             num_samples = samples_per_class[sr_class]
             
             new_sr.fit_parameters = new_sr.fit_parameters.iloc[:num_samples,:]
-            self[sr_id] = new_sr
+            self[sr_id[1:]] = new_sr
     
     
     def oversample_smote(self, classes: dict[str, str]):
@@ -298,10 +299,12 @@ class SamplerResultGroup(Group):
         meta_cols = [x for x in self._cols if x[:-6] != 'median']
         
         for sr_id in self.associated_objects.index:
-            sr = self[sr_id]
+            sr = self[sr_id[1:]]
             df = sr.fit_parameters
             for m in meta_cols:
-                df[m] = self._meta[sr_id, m]
+                df[m] = self._meta.loc[sr_id[1:], m]
+            df['score'] = sr.score
+            df['id'] = sr_id[1:]
             df.set_index('id', inplace=True)
             if combined_df is None:
                 combined_df = df

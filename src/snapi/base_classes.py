@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import os
+import shutil
 import time
 import dill
 from typing import TypeVar, Optional, Any
@@ -59,7 +60,7 @@ class Base(ABC):
         except Exception as exc:
             raise ValueError(f"Input {iid} could not be casted to a string!") from exc
         
-    def save(self, file_name: str, append: bool = False) -> None:
+    def save(self, file_name: str) -> None:
         """Save LightCurve object using Apache Arrow.
 
         Parameters
@@ -71,8 +72,9 @@ class Base(ABC):
         append : bool
             Whether to append to existing file (handled through directory structure).
         """
-
-        # Ensure the directory exists
+        if os.path.exists(file_name):
+            shutil.rmtree(file_name)
+            
         os.makedirs(file_name, exist_ok=True)
         
         if self.associated_objects is not None:
@@ -107,7 +109,7 @@ class Base(ABC):
         # Save associated objects
         if self.associated_objects is not None:
             for assoc_name in self.associated_objects.index:
-                getattr(self, assoc_name).save(file_name=f"{file_name}/{assoc_name}", append=True)
+                getattr(self, assoc_name).save(file_name=f"{file_name}/{assoc_name}")
             
     @classmethod
     def load(cls: Any, file_name: str) -> Any:
@@ -145,11 +147,17 @@ class Base(ABC):
             
             # Load associated objects
             if new_obj.associated_objects is not None:
+                rm_objs = []
                 for i, obj_row in new_obj.associated_objects.iterrows():
                     #t1 = time.perf_counter()
                     subtype = str_to_class(obj_row['type'])
                     #print(new_obj.__class__.__name__, "subtype", time.perf_counter() - t1)
-                    setattr(new_obj, obj_row.name, subtype.load(f"{file_name}/{obj_row.name}"))
+                    try:
+                        loaded_obj = subtype.load(f"{file_name}/{obj_row.name}")
+                        setattr(new_obj, obj_row.name, loaded_obj)
+                    except:
+                        rm_objs.append(obj_row.name)
+                new_obj.associated_objects.drop(rm_objs, inplace=True)
 
             #t1 = time.perf_counter()
             new_obj.update()
