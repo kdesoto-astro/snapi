@@ -5,14 +5,14 @@ import numpy as np
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
-from .base_classes import MeasurementSet, Plottable
+from .base_classes import Plottable
 from .formatter import Formatter
 from .spectrum import Spectrum
 
 SpecT = TypeVar("SpecT", bound="Spectroscopy")
 
 
-class Spectroscopy(MeasurementSet, Plottable):
+class Spectroscopy(Plottable):
     """Class for Spectroscopy, which includes a collection
     of individual Spectrum objects. Usually associated with
     a Transient or HostGalaxy object.
@@ -27,10 +27,12 @@ class Spectroscopy(MeasurementSet, Plottable):
         self._spectra = []
         if spectra is None:
             spectra = []
+        else:
+            self._initialize_assoc_objects()
         for spec in spectra:
             if not isinstance(spec, Spectrum):
                 raise TypeError("All elements of 'spectra' must be a Spectrum!")
-            self.associated_objects[str(spec.spectrometer)] = Spectrum.__name__
+            self.associated_objects.loc[str(spec.spectrometer)] = {'type': Spectrum.__name__}
             setattr(self, str(spec.spectrometer), spec.copy())
             self._spectra.append(str(spec.spectrometer))
             
@@ -147,7 +149,8 @@ class Spectroscopy(MeasurementSet, Plottable):
     def add_spectrum(self, spec: Spectrum) -> None:
         """Add spectrum to the collection of spectra."""
         # Find the index where the spectrum should be inserted based on its time
-        self.associated_objects[str(spec.spectrometer)] = Spectrum.__name__
+        self._initialize_assoc_objects()
+        self.associated_objects.loc[str(spec.spectrometer)] = {'type': Spectrum.__name__}
         setattr(self, str(spec.spectrometer), spec.copy())
         self._spectra.append(str(spec.spectrometer))
 

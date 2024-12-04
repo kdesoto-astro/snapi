@@ -1,5 +1,6 @@
 """Contains TNSQueryAgent for querying transient objects from ALeRCE."""
 from typing import Any, List, Mapping
+from requests.exceptions import ChunkedEncodingError
 
 import astropy.units as u
 import numpy as np
@@ -9,7 +10,7 @@ from alerce.exceptions import APIError  # pylint: disable=import-error
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-from ..lightcurve import Filter, LightCurve
+from ..photometry import Filter, LightCurve
 from .query_agent import QueryAgent
 from .query_result import QueryResult
 
@@ -46,26 +47,26 @@ class ALeRCEQueryAgent(QueryAgent):
             return [], False
         # Getting detections for an object
         lc = self._client.query_lightcurve(objname, format="pandas")
-        detections = pd.DataFrame(list(lc["detections"])[0])
-
+        detections = pd.DataFrame(lc['detections'].item())
+        detections.dropna(axis=1, inplace=True)
+        
         # add nondetections
-        nondetections = pd.DataFrame(list(lc["non_detections"])[0])
-        non_na_columns = detections.columns[detections.notna().any()]
-        non_na_columns2 = nondetections.columns[nondetections.notna().any()]
-        all_detections = pd.concat([detections[non_na_columns], nondetections[non_na_columns2]])
+        nondetections = pd.DataFrame(lc["non_detections"].item())
+        nondetections.dropna(axis=1, inplace=True)
+        all_detections = pd.concat([detections, nondetections], copy=False, ignore_index=True)
 
         if "forced_photometry" in lc:  # not available with older versions of alerce-client
-            forced_detections = pd.DataFrame(list(lc["forced_photometry"])[0])
-            non_na_columns = all_detections.columns[all_detections.notna().any()]
-            non_na_columns2 = forced_detections.columns[forced_detections.notna().any()]
-            all_detections = pd.concat([all_detections[non_na_columns], forced_detections[non_na_columns2]])
+            forced_detections = pd.DataFrame(lc["non_detections"].item())
+            forced_detections.dropna(axis=1, inplace=True)
+            all_detections = pd.concat([all_detections, forced_detections], ignore_index=True)
 
         if "mjd" not in all_detections.columns:
             return [], False
         if len(all_detections) == 0:
             return [], False
-
-        # add extra fields
+        
+        """
+        # add extra fields: seems unnecessary right now
         if "extra_fields" in all_detections.columns:
             extra_fields = all_detections["extra_fields"].apply(pd.Series)
             cols_to_use = extra_fields.columns.difference(all_detections.columns)
@@ -74,8 +75,7 @@ class ALeRCEQueryAgent(QueryAgent):
                 axis=1,
             )
             all_detections.drop(columns=["extra_fields"], inplace=True)
-
-        all_detections.reset_index(drop=True, inplace=True)
+        """
 
         # add missing fields
         if "mag" not in all_detections.columns:
@@ -96,22 +96,34 @@ class ALeRCEQueryAgent(QueryAgent):
                 all_detections["mag"].fillna(all_detections["magap"])
                 all_detections["e_mag"].fillna(all_detections["sigmagap"])
 
-        all_detections["magzpsci"] = 23.90  # bandaid to make fluxes all mu-Jy
+        all_detections["zeropoint"] = 23.90  # bandaid to make fluxes all mu-Jy
 
         # find non-detections
         all_detections["upper_limit"] = False
         nondetect_mask = (all_detections["mag"] == 100.0) | (all_detections["mag"].isna())
+        all_detections.loc[nondetect_mask, "e_mag"] = np.nan
+        all_detections.loc[nondetect_mask, "upper_limit"] = True
+        
         if "diffmaglim" in all_detections.columns:
             all_detections.loc[nondetect_mask, "mag"] = all_detections.loc[nondetect_mask, "diffmaglim"]
-            all_detections.loc[nondetect_mask, "e_mag"] = np.nan
-            all_detections.loc[nondetect_mask, "upper_limit"] = True
-
+            
         all_detections.rename(columns={
-            'mjd': 'time',
-            'e_mag': 'mag_unc',
-            'upper_limit': 'non_detections',
-            'magzpsci': 'zpt'
+            'e_mag': 'mag_error',
         }, inplace=True)
+        
+        # remove repeated non-detections + forced-detections
+        nonrepeat_mask = all_detections.groupby('mjd', group_keys=False)['upper_limit'].idxmin()
+        all_detections = all_detections.loc[nonrepeat_mask,['mjd', 'fid', 'mag', 'mag_error', 'upper_limit', 'zeropoint']]
+        all_detections['flux'] = np.nan
+        all_detections['flux_error'] = np.nan
+        
+        all_detections.set_index(
+            pd.DatetimeIndex(
+                Time(all_detections["mjd"], format="mjd").to_datetime()
+            ), inplace=True
+        )
+        all_detections.index.name = "mjd"
+        all_detections.drop(columns='mjd', inplace=True)
 
         lcs: list[LightCurve] = []
 
@@ -119,11 +131,12 @@ class ALeRCEQueryAgent(QueryAgent):
             filt = Filter(
                 instrument="ZTF",
                 band=self._int_to_band[b],
-                center=self._band_centers[b] * u.AA,  # pylint: disable=no-member
-                width=self._band_widths[b] * u.AA,  # pylint: disable=no-member
+                center=self._band_centers[b],
+                width=self._band_widths[b],
             )  # pylint: disable=no-member
             mask = all_detections["fid"] == b
-            lc = LightCurve(all_detections.loc[mask,:], filt=filt)
+            lc = LightCurve(all_detections.loc[mask], filt=filt, phased=False, validate=False)
+            lc.update()
             lcs.append(lc)
             
         return lcs, True
@@ -168,7 +181,7 @@ class ALeRCEQueryAgent(QueryAgent):
                         }
                     )
                 )
-            except APIError:
+            except (ChunkedEncodingError, APIError):
                 results.append(QueryResult())
 
         return results, True

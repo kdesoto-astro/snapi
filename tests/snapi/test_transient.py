@@ -20,8 +20,8 @@ class TestTransientInit:
     def test_empty_init(self) -> None:
         """Test initialization with no fields."""
         transient = Transient()
-        assert len(transient.photometry) == 0
-        assert len(transient.spectroscopy) == 0
+        assert transient.photometry is None
+        assert transient.spectroscopy is None
         assert transient.id == str(id(transient))
         assert transient.coordinates is None
         assert transient.redshift is None
@@ -116,7 +116,7 @@ def test_eq(
                 test_spectrum1,
             ]
         ),
-        photometry=Photometry(
+        photometry=Photometry.from_light_curves(
             [
                 test_lightcurve2,
                 test_lightcurve1,

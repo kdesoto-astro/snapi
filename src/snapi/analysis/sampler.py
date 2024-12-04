@@ -2,17 +2,14 @@
 """Stores superclass for sampler objects and fit results."""
 import os
 from typing import Any, Mapping, Optional, Type, TypeVar
+import abc
 
-import jax.numpy as jnp
 import numpy as np
-import numpyro.distributions as dist
-import numpyro
 import pandas as pd
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_array, check_is_fitted
-from scipy.stats import truncnorm
 
 from ..formatter import Formatter
 from ..photometry import Photometry
@@ -32,11 +29,7 @@ class SamplerPrior(Base):
     ):
         """Stores prior information for the Sampler."""
         super().__init__()
-        for k in ['param', 'mean', 'stddev', 'min', 'max', 'logged', 'relative', 'relative_op']:
-            if k not in prior_info:
-                raise ValueError(f"column {k} not in prior_info!")
         self._df = prior_info
-        self._df.loc[:,'logged'] = self._df.loc[:,'logged'].astype(bool)
         self._rng = np.random.default_rng()
         self.arr_attrs.append("_df")
         self.update()
@@ -45,39 +38,7 @@ class SamplerPrior(Base):
         """Rearrange priors so correlated priors are sampled
         in the right order.
         """
-        rerun = False
-        while rerun:
-            rerun = False
-            ordered_indices = {p: i for i, p in enumerate(self._df['param'])}
-            for r in self._df.loc[~pd.isna(self._df['relative'])]:
-                if ordered_indices[r['relative']] > r.index:
-                    # move r to back of array
-                    self._df.pop(r, inplace=True)
-                    self._df.append(r, inplace=True)
-                    rerun = True
-                    
-        self._tga = ((self._df['min'] - self._df['mean']) / self._df['stddev']).to_numpy()
-        self._tgb = ((self._df['max'] - self._df['mean']) / self._df['stddev']).to_numpy()
-        
-        self._relative_masks = {}
-        
-        for op in ["*", "+"]:
-            rel_mask = (self._df['relative'].notna() & (self._df['relative_op'] == op)).to_numpy()
-            rel_idxs = []
-
-            # get shuffled relative idxs
-            for rel_val in self._df.loc[rel_mask, 'relative']:
-                # Find the index where the 'param' column matches the 'relative' value
-                index = self._df[self._df['param'] == rel_val].index
-                rel_idxs.append(index[0])  # Storing the first matching index
-
-            self._relative_masks[op] = (jnp.array(rel_mask), jnp.array(rel_idxs))
-            
-        # faster sample calls
-        self._logged = self._df['logged'].to_numpy()
-        self._mean = self._df['mean'].to_numpy()
-        self._std = self._df['stddev'].to_numpy()
-        self._numpyro_sample_arr = self._df[['param', 'min', 'max', 'mean', 'stddev']].to_numpy()
+        pass
         
     def __get__(self, key):
         """Retrieve prior info for a certain parameter."""
@@ -93,70 +54,12 @@ class SamplerPrior(Base):
         """Return all prior info in a dataframe."""
         return self._df.copy()
     
-    def _trunc_norm(self, fields, low=None, high=None):
-        """Provides keyword parameters to numpyro's TruncatedNormal, using the fields in PriorFields.
-
-        Parameters
-        ----------
-        fields : PriorFields
-            The (low, high, mean, standard deviation) fields of the truncated normal distribution.
-
-        Returns
-        -------
-        numpyro.distributions.TruncatedDistribution
-            A truncated normal distribution.
-        """
-        if high is None:
-            high = fields[1]
-        else:
-            high = jnp.minimum(high, fields[1])
-        if low is None:
-            low = fields[0]
-        else:
-            low = jnp.maximum(low, fields[0])
-
-        return dist.TruncatedNormal(
-            loc=fields[2], scale=fields[3], low=low, high=high, validate_args=True
-        )
-    
+    @abc.abstractmethod
     def sample(self, cube, use_numpyro=False):
         """Sample from priors. If numpyro=True, then
         use the numpyro framework.
         """
-        if use_numpyro:
-            vals = jnp.array([numpyro.sample(r[0], self._trunc_norm(r[1:])) for r in self._numpyro_sample_arr])
-            vals = vals.at[self._logged].set(10**vals[self._logged])
-            vals = vals.at[self._relative_masks["*"][0]].set(vals[self._relative_masks["*"][0]] * vals[self._relative_masks["*"][1]])
-            vals = vals.at[self._relative_masks["+"][0]].set(vals[self._relative_masks["+"][0]] + vals[self._relative_masks["+"][1]])
-        else:
-            #if cube is None:
-            #    cube = self._rng.uniform(size=len(self._df))
-                
-            vals = truncnorm.ppf(
-                cube, self._tga, self._tgb,
-                loc=self._mean,
-                scale=self._std
-            )
-            
-            # log transformations
-            vals[self._logged] = 10**vals[self._logged]
-
-            # relative transformations
-            vals[self._relative_masks["*"][0]] *= vals[self._relative_masks["*"][1]]
-            vals[self._relative_masks["+"][0]] += vals[self._relative_masks["+"][1]]
-        return vals
-    
-    def transform(self, samples):
-        """Transform relative and log-Gaussian samples
-        from gaussian-sampled values.
-        """
-        shuffle_idxs = [np.where(samples.columns == p)[0][0] for p in self._df['param']]
-        samples_shuffled = samples.iloc[:,shuffle_idxs] # now order matches
-        samples_shuffled.iloc[:,self._logged] = 10**samples_shuffled.iloc[:,self._logged]
-        samples_numpy = samples_shuffled.to_numpy()
-        samples_shuffled.iloc[:,np.array(self._relative_masks["+"][0])] += samples_numpy[:,np.array(self._relative_masks["+"][1])]
-        samples_shuffled.iloc[:,np.array(self._relative_masks["*"][0])] *= samples_numpy[:,np.array(self._relative_masks["*"][1])]
-        return samples_shuffled
+        pass
             
     
 class SamplerResult(Base):
@@ -166,6 +69,7 @@ class SamplerResult(Base):
         self,
         fit_parameters: Any = None,
         sampler_name: Optional[str] = None,
+        event_id: str = "",
     ):
         """
         Parameters
@@ -175,6 +79,9 @@ class SamplerResult(Base):
             with each key must be one-dimensional.
         """
         super().__init__()
+        
+        self.id = event_id
+        
         if isinstance(fit_parameters, dict):
             for key, value in fit_parameters.items():
                 if np.atleast_1d(value).ndim != 1:
@@ -188,10 +95,10 @@ class SamplerResult(Base):
             raise ValueError("fit_parameters must be a dictionary or DataFrame.")
 
         self._sampler_name = sampler_name
-        self.score = 0.0
+        self.score = None
         
         self.arr_attrs.append("_fit_params")
-        self.meta_attrs.extend(["_sampler_name", "score"])
+        self.meta_attrs.extend(["_id", "_sampler_name", "score"])
 
     def __str__(self) -> str:
         return str(self._fit_params)
@@ -211,7 +118,10 @@ class SamplerResult(Base):
         """Augments fit_parameters attribute.
         Columns should stay the same.
         """
-        if (self._fit_params is not None) and (fit_parameters.columns != self._fit_params.columns):
+
+        if (self._fit_params is not None) and np.any(
+            np.intersect1d(fit_parameters.columns, self._fit_params.columns) != sorted(self._fit_params.columns)
+        ):
             raise ValueError("columns must match between original and new fit_parameters")
             
         self._fit_params = fit_parameters
@@ -414,14 +324,14 @@ class Sampler(BaseEstimator):  # type: ignore
         dets = photometry.detections
         dets_mjd = dets.index.total_seconds().to_numpy() / (24 * 3600)
         if self._mag_y:
-            x_arr = np.array([dets_mjd, dets["filters"], dets["mag_unc"]], dtype=object).T
+            x_arr = np.array([dets_mjd, dets["filter"], dets["mag_error"]], dtype=object).T
         else:
-            x_arr = np.array([dets_mjd, dets["filters"], dets["flux_unc"]], dtype=object).T
+            x_arr = np.array([dets_mjd, dets["filter"], dets["flux_error"]], dtype=object).T
 
         y = dets["mag"].to_numpy() if self._mag_y else dets["flux"].to_numpy()
         return x_arr, y
 
-    def fit_photometry(self, photometry: Photometry) -> None:
+    def fit_photometry(self, photometry: Photometry, **kwargs) -> None:
         """Fit a Photometry object. Saves information to
         Photometry object.
 
@@ -430,7 +340,7 @@ class Sampler(BaseEstimator):  # type: ignore
             The Photometry object to fit.
         """
         x_phot, y_phot = self._convert_photometry_to_arrs(photometry)
-        self.fit(x_phot, y_phot)
+        self.fit(x_phot, y_phot, **kwargs)
 
     def predict_photometry(
         self, photometry: Photometry
@@ -478,7 +388,7 @@ class Sampler(BaseEstimator):  # type: ignore
             X = self._X
         if formatter is None:
             formatter = Formatter()
-        for b in np.unique(X[:, 1]):
+        for b in photometry._unique_filters:
             if dense:
                 t_arr = np.linspace(np.min(X[:, 0]) - 20.0, np.max(X[:, 0]) + 20.0, 1000)
                 new_x = np.repeat(t_arr[np.newaxis, :].T, 3, axis=1).astype(object)
@@ -507,7 +417,7 @@ class Sampler(BaseEstimator):  # type: ignore
             formatter.rotate_markers()
         return ax
 
-    def load_result(self, load_fn: str) -> None:
+    def load_result(self, sampler_result: SamplerResult) -> None:
         """Load a FitResult from an HDF5 file.
 
         Parameters
@@ -517,7 +427,7 @@ class Sampler(BaseEstimator):  # type: ignore
         hdf5_path : str, optional
             The path to load the fit results from in the HDF
         """
-        self.result = SamplerResult.load(load_fn)
+        self.result = sampler_result
         self._is_fitted = True
 
     def _eff_variance(self, X: NDArray[np.object_]) -> NDArray[np.float64]:
@@ -527,7 +437,7 @@ class Sampler(BaseEstimator):  # type: ignore
     def _reduced_chi_squared(
         self, X: NDArray[np.object_], y: NDArray[np.float64], y_pred: NDArray[np.float64]
     ) -> float:
-        """Returns the reduced chi-squared value of the model.
+        """Returns the reduced chi-squared value of each fit from the model's results.
 
         Parameters
         ----------
@@ -540,14 +450,10 @@ class Sampler(BaseEstimator):  # type: ignore
 
         Returns
         -------
-        float
-            The reduced chi-squared value.
+        np.ndarray
+            The reduced chi-squared value for each fit.
         """
-        return float(
-            np.median(
-                np.sum(
-                    (y[np.newaxis, :] - y_pred) ** 2 / self._eff_variance(X) / (len(y) - self._nparams - 1),
-                    axis=1,
-                )
-            )
+        return np.sum(
+            (y[np.newaxis, :] - y_pred) ** 2 / self._eff_variance(X) / (len(y) - self._nparams - 1),
+            axis=1,
         )

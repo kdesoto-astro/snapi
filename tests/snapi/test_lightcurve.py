@@ -20,8 +20,8 @@ class TestLightCurveInit:
     def test_init_from_mag_arrs(self) -> None:
         """Tests for successful initialization from
         individual time and mag arrays."""
-        lc = LightCurve(
-            times=self.sample_arrs["time"],
+        lc = LightCurve.from_arrays(
+            phase=self.sample_arrs["time"],
             mags=self.sample_arrs["mag"],
             mag_errs=self.sample_arrs["mag_unc"],
             zpts=self.sample_arrs["zpt"],
@@ -45,8 +45,8 @@ class TestLightCurveInit:
     def test_init_from_flux_arrs(self) -> None:
         """Tests for successful initialization from
         individual time and flux arrays."""
-        lc = LightCurve(
-            times=self.sample_arrs["time"],
+        lc = LightCurve.from_arrays(
+            phase=self.sample_arrs["time"],
             fluxes=self.sample_arrs["flux"],
             flux_errs=self.sample_arrs["flux_unc"],
             zpts=self.sample_arrs["zpt"],
@@ -71,7 +71,7 @@ class TestLightCurveInit:
         """Ensure initializations fail where intended."""
         with pytest.raises(TypeError):
             # no times
-            LightCurve(  # pylint: disable=no-value-for-parameter
+            LightCurve.from_arrays(  # pylint: disable=no-value-for-parameter
                 mags=self.sample_arrs["mag"],  # type: ignore
                 mag_errs=self.sample_arrs["mag_unc"],
                 zpts=self.sample_arrs["zpt"],
@@ -80,7 +80,7 @@ class TestLightCurveInit:
 
         with pytest.raises(TypeError):
             # wrong Filter
-            LightCurve(
+            LightCurve.from_arrays(
                 times=self.sample_arrs["time"],
                 mags=self.sample_arrs["mag"],
                 mag_errs=self.sample_arrs["mag_unc"],
@@ -101,14 +101,14 @@ class TestSetters:
         lc_copy = self.lc.copy()
         lc_copy.times = self.other_overlap.times
         assert (lc_copy.times == self.other_overlap.times).all()
-        lc_copy.mags = self.other_overlap.mags
-        assert (lc_copy.mags == self.other_overlap.mags).all()
+        lc_copy.fluxes = self.other_overlap.fluxes
+        assert (lc_copy.fluxes == self.other_overlap.fluxes).all()
         # check that fluxes changed accordingly
-        assert (lc_copy.fluxes != self.lc.fluxes).any()
-        assert (lc_copy.fluxes != self.other_overlap.fluxes).any()  # cause diff. zeropoints
+        assert (lc_copy.mags != self.lc.mags).any()
+        assert (lc_copy.mags != self.other_overlap.mags).any()  # cause diff. zeropoints
         # now update zeropoint to match
         lc_copy.zeropoints = self.other_overlap.zeropoints
-        assert (lc_copy.fluxes == self.other_overlap.fluxes).all()
+        assert (lc_copy.mags == self.other_overlap.mags).all()
 
         # check deeper equivalence through detections attribute
         assert lc_copy.detections[["mag", "flux"]].equals(self.other_overlap.detections[["mag", "flux"]])
@@ -164,13 +164,13 @@ def test_peak(test_lightcurve1: LightCurve, test_lightcurve2: LightCurve) -> Non
     """Test peak of a LightCurve is calculated correctly."""
     # test normal LC (no repeated mags)
     peak = test_lightcurve1.peak
-    assert peak["time"] == 2.0
+    assert peak["phase"] == 2.0
     assert peak["mag"] == 14.0
     assert peak["flux"] == 10.0 ** (-1.0 * (14.0 - 23.9) / 2.5)
 
     # test with repeated mags
     peak = test_lightcurve2.peak
-    assert peak["time"] == 3.0  # incorporates m_unc
+    assert peak["phase"] == 3.0  # incorporates m_unc
     assert peak["mag"] == 20.0
     assert peak["flux"] == 10.0 ** (-1.0 * (20.0 - 25.0) / 2.5)
 
@@ -185,21 +185,19 @@ class TestPhase:
     def test_phase_constant_given(self) -> None:
         """Test phase() function of LightCurve where
         no periodic phasing is done and there is a given shift."""
-        lc_copy = self.lc.copy()
-        lc_copy.phase(t0=0)  # no shift
+        lc_copy = self.lc.phase(t0=0, inplace=False)  # no shift
         assert lc_copy == self.lc
 
-        lc_copy.phase(t0=1)
-        shifted_times = lc_copy.times
-        assert np.all(shifted_times + 1 == self.lc.times)
+        lc_copy = self.lc.phase(t0=1, inplace=False)
+        shifted_times = lc_copy.times + 1
+        assert np.all(shifted_times == self.lc.times)
 
     def test_phase_constant_not_given(self) -> None:
         """Test phase() function of LightCurve where
         no periodic phasing is done and there is no given shift."""
-        lc_copy = self.lc.copy()
-        lc_copy.phase()  # shifts according to peak = 2.0
-        shifted_times = lc_copy.times
-        assert np.all(shifted_times + 2 == self.lc.times)
+        lc_copy = self.lc.phase(inplace=False)
+        shifted_times = lc_copy.times + 2
+        assert np.all(shifted_times == self.lc.times)
 
     def test_phase_periodic_given(self) -> None:
         """Test phase() function of LightCurve where periodic=True
@@ -342,8 +340,7 @@ class TestMerge:
         other_lc_copy = self.other_no_overlap.copy()
         other_lc_copy.filter = self.lc.filter  # filters must match
 
-        lc_merged = self.lc.copy()
-        lc_merged.merge(other_lc_copy)
+        lc_merged = self.lc.merge(other_lc_copy)
         assert len(lc_merged) == 7
         merged_t = lc_merged.times
         for t in self.lc.times:
@@ -358,8 +355,7 @@ class TestMerge:
         other_lc_copy = self.other_overlap.copy()
         other_lc_copy.filter = self.lc.filter  # filters must match
 
-        lc_merged = self.lc.copy()
-        lc_merged.merge(other_lc_copy)
+        lc_merged = self.lc.merge(other_lc_copy)
         assert len(lc_merged) == 7
         merged_t = lc_merged.times
         for t in self.lc.times:
@@ -370,8 +366,7 @@ class TestMerge:
     def test_merge_full_overlap(self) -> None:
         """Tests merging two of the same
         light curve."""
-        lc_merged = self.lc.copy()
-        lc_merged.merge(self.lc)
+        lc_merged = self.lc.merge(self.lc)
         assert len(lc_merged) == 4
         merged_t = lc_merged.times
         for t in self.lc.times:
@@ -432,8 +427,7 @@ class TestResample:
 def test_absolute(test_lightcurve1: LightCurve) -> None:
     """Tests conversion from apparent to absolute
     light curve."""
-    lc_copy = test_lightcurve1.copy()
-    lc_copy.phase()
+    lc_copy = test_lightcurve1.phase(inplace=False)
     abs_lc = lc_copy.absolute(redshift=0.1)
     assert np.isclose(abs_lc.times, lc_copy.times / 1.1).all()
     assert not np.isclose(abs_lc.mags, lc_copy.mags).any()
@@ -459,7 +453,6 @@ class TestCorrectExtinction:
         mwebv2 = 1.0
         corrected_lc = self.lc.correct_extinction(mwebv=mwebv2)
         assert (corrected_lc.mags < self.lc.mags).all()
-        assert np.allclose(corrected_lc.fluxes, self.lc.fluxes)  # photon counts the same
 
     def test_correct_extinction_coords(self) -> None:
         """Tests correct_extinction when only
@@ -467,7 +460,6 @@ class TestCorrectExtinction:
         """
         corrected_lc: LightCurve = self.lc.correct_extinction(coordinates=self.coord)
         assert (corrected_lc.mags < self.lc.mags).all()
-        assert np.allclose(corrected_lc.fluxes, self.lc.fluxes)
 
     def test_correct_extinction_illegal(self) -> None:
         """Test when inconsistent mwebv and coordinates

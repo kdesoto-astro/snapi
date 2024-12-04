@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from astropy.coordinates import SkyCoord
 
-from ..lightcurve import LightCurve
+from ..photometry import LightCurve
 from ..spectrum import Spectrum
 
 

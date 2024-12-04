@@ -13,7 +13,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from numpy.typing import NDArray
 
-from ..lightcurve import Filter, LightCurve
+from ..photometry import Filter, LightCurve
 from ..spectrum import Spectrometer, Spectrum
 from .query_agent import QueryAgent
 from .query_result import QueryResult

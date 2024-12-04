@@ -1,4 +1,5 @@
 from typing import Any, Iterable, Optional, Type, TypeVar
+import time
 
 import astropy.units as u
 import h5py
@@ -7,8 +8,7 @@ from astropy.units import Quantity
 
 
 from .base_classes import Base
-from .lightcurve import LightCurve
-from .photometry import Photometry
+from .photometry import Photometry, LightCurve
 from .spectroscopy import Spectroscopy
 from .spectrum import Spectrum
 
@@ -33,11 +33,12 @@ class Transient(Base):
         # host: HostGalaxy = None,
     ) -> None:
         super().__init__()
+        
         if iid is None:
             self.id = str(id(self))
         else:
             self.id = str(iid)
-
+            
         if isinstance(ra, Quantity):
             self._ra = ra.to(u.deg).value # pylint: disable=no-member
             self._dec = dec.to(u.deg).value # pylint: disable=no-member
@@ -48,15 +49,8 @@ class Transient(Base):
             self._ra = float(ra)
             self._dec = float(dec)
 
-        if photometry is None:
-            self.photometry = Photometry()
-        else:
-            self.photometry = photometry
-        
-        if spectroscopy is None:
-            self.spectroscopy = Spectroscopy()
-        else:
-            self.spectroscopy = spectroscopy
+        self.photometry = photometry
+        self.spectroscopy = spectroscopy
             
         if internal_names is None:
             self.internal_names = set()
@@ -69,10 +63,7 @@ class Transient(Base):
         self._choose_main_name()
         # self.host = host
         
-        self.associated_objects['photometry'] = Photometry.__name__
-        self.associated_objects['spectroscopy'] = Spectroscopy.__name__
-        
-        self.meta_attrs.extend(['id','_ra','_dec','internal_names','spec_class','redshift'])
+        self.meta_attrs = ['id','_ra','_dec','internal_names','spec_class','redshift']
 
     def _choose_main_name(self) -> None:
         """Chooses the main name for the transient."""
@@ -93,7 +84,10 @@ class Transient(Base):
     def __len__(self) -> int:
         """Returns the number of observations associated with
         the transient (both photometric and spectroscopic)."""
-        return len(self.photometry) + len(self.spectroscopy)
+        len_phot = 0 if not self.photometry else len(self.photometry)
+        len_spec = 0 if not self.spectroscopy else len(self.spectroscopy)
+        
+        return len_phot + len_spec
     
     def __eq__(self, other: object) -> bool:
         """Return True if there is a shared name
@@ -164,7 +158,38 @@ class Transient(Base):
 
     def add_lightcurve(self, lightcurve: LightCurve) -> None:
         """Adds a single light curve to photometry."""
-        self.photometry.add_lightcurve(lightcurve)
+        if self.photometry is None:
+            self.photometry = Photometry()
+            
+        self.photometry.add_lightcurve(lightcurve, inplace=True)
+        
+    @property
+    def photometry(self) -> Photometry:
+        return self._photometry
+    
+    @photometry.setter
+    def photometry(self, photometry) -> None:
+        if photometry is None:
+            if self.associated_objects is not None:
+                self.associated_objects.drop(index='_photometry', inplace=True, errors='ignore')
+        else:
+            self._initialize_assoc_objects()
+            self.associated_objects.loc['_photometry'] = {'type': Photometry.__name__}
+        self._photometry = photometry
+        
+    @property
+    def spectroscopy(self) -> Spectroscopy:
+        return self._spectroscopy
+    
+    @spectroscopy.setter
+    def spectroscopy(self, spectroscopy) -> None:
+        self._spectroscopy = spectroscopy
+        if spectroscopy is None:
+            if self.associated_objects is not None:
+                self.associated_objects.drop(index='_spectroscopy', inplace=True, errors='ignore')
+        else:
+            self._initialize_assoc_objects()
+            self.associated_objects.loc['_spectroscopy'] = {'type': Spectroscopy.__name__}
 
     def add_lightcurves(self, lightcurves: Iterable[LightCurve]) -> None:
         """Adds a set of light curves to the
@@ -179,6 +204,7 @@ class Transient(Base):
         """Adds a single spectrum to the spectroscopy attribute."""
         if self.spectroscopy is None:
             self.spectroscopy = Spectroscopy()  # initialize new instance
+            
         self.spectroscopy.add_spectrum(spectrum)
 
     def add_spectra(self, spectra: Iterable[Spectrum]) -> None:

@@ -1,14 +1,18 @@
 from abc import ABC, abstractmethod
+import os
+import shutil
+import time
+import dill
 from typing import TypeVar, Optional, Any
 import copy
 from matplotlib.axes import Axes
-from astropy.io.misc import hdf5
 import pandas as pd
+import pyarrow.feather as feather
+#import msgpack
 
 from .utils import list_datasets, str_to_class
 
 
-MeasT = TypeVar("MeasT", bound="MeasurementSet")
 BaseT = TypeVar("BaseT", bound="Base")
 
 class Base(ABC):
@@ -18,11 +22,19 @@ class Base(ABC):
     """
 
     @abstractmethod
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         self._id: str = ""
-        self.associated_objects: dict[str, object] = {}
         self.arr_attrs: list[str] = []
         self.meta_attrs: list[str] = []
+        self.associated_objects = None
+        
+    def _initialize_assoc_objects(self) -> None:
+        if self.associated_objects is None:
+            self.associated_objects = pd.DataFrame(
+                columns=['type',],
+                index=pd.Index([], dtype='string'),
+                dtype='string'
+            )
 
     def copy(self: BaseT) -> BaseT:
         """Return a deep copy of the object."""
@@ -48,103 +60,121 @@ class Base(ABC):
         except Exception as exc:
             raise ValueError(f"Input {iid} could not be casted to a string!") from exc
         
-    def save(self, file_name: str, path: Optional[str] = None, append: bool = False) -> None:
-        """Save LightCurve object as an HDF5 file.
+    def save(self, file_name: str) -> None:
+        """Save LightCurve object using Apache Arrow.
 
         Parameters
         ----------
         file_name : str
-            Name of file to save.
+            Name of file to save (will be treated as a directory).
         path : str
-            HDF5 path to save Measurement.
+            Path within the Arrow structure to save Measurement.
         append : bool
-            Whether to append to existing file.
+            Whether to append to existing file (handled through directory structure).
         """
-        if path is None:
-            path = "/" + type(self).__name__
+        if os.path.exists(file_name):
+            shutil.rmtree(file_name)
             
-        mode = "a" if append else "w"
+        os.makedirs(file_name, exist_ok=True)
+        
+        if self.associated_objects is not None:
+            feather.write_feather(
+                self.associated_objects,
+                f"{file_name}/associated_objects.feather",
+                compression='uncompressed',
+            )
 
-        # Save DataFrame and attributes to HDF5
-        with pd.HDFStore(file_name, mode=mode) as store:  # type: ignore
-            store.put(path, pd.Series([]))
-            # first store info on array + meta attrs and assoc. objects
-            store.put(path + "/arr_attrs", pd.Series(self.arr_attrs))
-            store.put(path + "/meta_attrs", pd.Series(self.meta_attrs))
-            obj_keys = []
-            obj_values = []
-            for (k, v) in self.associated_objects.items():
-                obj_keys.append(k)
-                obj_values.append(v)
-            store.put(path + "/assoc_keys", pd.Series(obj_keys))
-            store.put(path + "/assoc_types", pd.Series(obj_values))
-                    
-            for arr_attr in self.arr_attrs:
-                attr = getattr(self, arr_attr)
-                if isinstance(attr, pd.DataFrame):
-                    store.put(path + f"/{arr_attr}", attr)
-                else:
-                    store.put(path + f"/{arr_attr}", pd.Series(attr))
-                                            
-        # Save any meta attrs
-        with pd.HDFStore(file_name, mode='a') as store:  # type: ignore
-            for meta_attr in self.meta_attrs:
-                setattr(store.get_storer(path).attrs, meta_attr, getattr(self, meta_attr))
+        # Save array attributes
+        for arr_attr in self.arr_attrs:
+            attr = getattr(self, arr_attr)
+            if not isinstance(attr, pd.DataFrame):
+                attr = pd.Series(attr).to_frame()
+            feather.write_feather(
+                attr,
+                f"{file_name}/{arr_attr}.feather",
+                compression='uncompressed',
+            )
+
+        # Save meta attributes using msgpack
+        meta_data = {attr: getattr(self, attr) for attr in self.meta_attrs}
+        
+        if len(self.arr_attrs) > 0:
+            meta_data['arr_attrs'] = self.arr_attrs
+        if len(self.meta_attrs) > 0:
+            meta_data['meta_attrs'] = self.meta_attrs
+
+        with open(f"{file_name}/meta.dill", 'wb') as f:
+            dill.dump(meta_data, f)
 
         # Save associated objects
-        for assoc_obj in self.associated_objects:
-            getattr(self, assoc_obj).save(file_name = file_name, path = path + f"/{assoc_obj}", append=True)
-
+        if self.associated_objects is not None:
+            for assoc_name in self.associated_objects.index:
+                getattr(self, assoc_name).save(file_name=f"{file_name}/{assoc_name}")
+            
     @classmethod
-    def load(
-        cls: Any,
-        file_name: str,
-        path: Optional[str] = None,
-    ) -> Any:
-        """Load LightCurve from saved HDF5 table. Automatically
-        extracts feature information.
-        """
+    def load(cls: Any, file_name: str) -> Any:
+        """Load LightCurve from saved Arrow structure."""
+        #t_overall = time.perf_counter()
         new_obj = cls()
+        #print(new_obj.__class__.__name__, "init", time.perf_counter() - t_overall)
 
-        if path is None:
-            path = "/" + cls.__name__
-            with pd.HDFStore(file_name) as store:
-                try:
-                    store[path]
-                except:
-                    raise ValueError(f"Default path {path} does not exist in file, please manually set path.")
+        try:
+            #t1 = time.perf_counter()
+            # Extract associated_objects
+            if os.path.exists(f"{file_name}/associated_objects.feather"):
+                new_obj.associated_objects = feather.read_feather(f"{file_name}/associated_objects.feather")
+            else:
+                new_obj.associated_objects = None
+            #print(new_obj.__class__.__name__, "assoc", time.perf_counter() - t1)
+
+            #t1 = time.perf_counter()
+            # Load meta attributes
+            with open(f"{file_name}/meta.dill", 'rb') as f:
+                meta_data = dill.load(f)
+
+            for attr, value in meta_data.items():
+                setattr(new_obj, attr, value)
+            #print(new_obj.__class__.__name__, "meta", time.perf_counter() - t1)
             
-        with pd.HDFStore(file_name) as store:
-            # unload attributes first
-            attr_dict = store.get_storer(path).attrs.__dict__  # type: ignore
-            
-            # get info about meta, array attributes, and associated objects
-            new_obj.arr_attrs = list(store[path+'/arr_attrs'])
-            new_obj.meta_attrs = list(store[path + '/meta_attrs'])
-            assoc_obj_keys = store[path + '/assoc_keys']
-            assoc_obj_types = store[path + '/assoc_types']
-            new_obj.associated_objects = {k: t for (k,t) in zip(assoc_obj_keys, assoc_obj_types)}
-            
-            # extract meta values
-            for a_key in new_obj.meta_attrs:
-                setattr(new_obj, a_key, attr_dict[a_key])
-            for attr_name in new_obj.arr_attrs: # array attribute
-                attr = store[f"{path}/{attr_name}"]
-                if isinstance(attr, pd.DataFrame):
-                    setattr(new_obj, attr_name, attr)
+            #t1 = time.perf_counter()
+            for arr_attr in new_obj.arr_attrs:
+                attr = feather.read_feather(f"{file_name}/{arr_attr}.feather")
+                if attr.ndim == 1:
+                    setattr(new_obj, arr_attr, attr.to_numpy())
                 else:
-                    setattr(new_obj, attr_name, attr.to_numpy())
-            for attr_name in new_obj.associated_objects: # associated object load
-                subtype = str_to_class(new_obj.associated_objects[attr_name])
-                setattr(new_obj, attr_name, subtype.load(file_name, f"{path}/{attr_name}"))
-                    
-            new_obj.update()
+                    setattr(new_obj, arr_attr, attr)
+            #print(new_obj.__class__.__name__, "arr", time.perf_counter() - t1)
             
-            return new_obj
+            # Load associated objects
+            if new_obj.associated_objects is not None:
+                rm_objs = []
+                for i, obj_row in new_obj.associated_objects.iterrows():
+                    #t1 = time.perf_counter()
+                    subtype = str_to_class(obj_row['type'])
+                    #print(new_obj.__class__.__name__, "subtype", time.perf_counter() - t1)
+                    try:
+                        loaded_obj = subtype.load(f"{file_name}/{obj_row.name}")
+                        setattr(new_obj, obj_row.name, loaded_obj)
+                    except:
+                        rm_objs.append(obj_row.name)
+                new_obj.associated_objects.drop(rm_objs, inplace=True)
+
+            #t1 = time.perf_counter()
+            new_obj.update()
+            #print(new_obj.__class__.__name__, "update", time.perf_counter() - t1)
+
+        except FileNotFoundError:
+            raise ValueError(f"Path {file_name}/{path} does not exist.")
+        
+        #print(time.perf_counter() - t_overall)
+        return new_obj
 
 
 class Plottable(Base):
     """Class for objects that can be plotted."""
+    
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
     @abstractmethod
     def plot(self, ax: Axes) -> Axes:
@@ -158,24 +188,17 @@ class Measurement(Base):
     """Base class for storing single measurement
     modality, such as a spectrum or light curve."""
 
-    def __init__(self) -> None:
-        super().__init__()
-
-class MeasurementSet(Base):
-    """Base class for storing collection
-    of measurements, potentially from different
-    instruments and taken at different times.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-
-    @abstractmethod
-    def filter_by_instrument(self: MeasT, instrument: str) -> MeasT:
-        """Return MeasurementSet with only measurements
-        from instrument named 'instrument.'
-        """
-        pass
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        
+    def _validate_observer(self, observer):
+        """Validate associated observer."""
+        if (observer is not None) and (not isinstance(observer, Observer)):
+            raise TypeError("filt must be None or an Observer subclass object!")
+        self._observer = observer
+        if self._observer is not None:
+            self._initialize_assoc_objects()
+            self.associated_objects['_observer'] = observer.__class__.__name__
 
 
 class Observer(Base):
