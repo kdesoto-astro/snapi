@@ -211,7 +211,7 @@ class TimeSeries(Base):
         Return as dictionary.
         """
         idx = self._peak_idx
-        peak_dict = self.detections.loc[idx].to_dict()
+        peak_dict = self.detections.loc[idx,:].to_dict()
 
         if self._phased:
             peak_dict["phase"] = idx.total_seconds() / (24 * 3600)  # type: ignore

@@ -22,8 +22,8 @@ dependencies = [
     'dustmaps',
     'extinction',
     'george',
-    'h5py',
     'matplotlib',
+    'multiprocess',
     'numba',
     'numpy==1.23.5',
     'pandas',
@@ -31,7 +31,8 @@ dependencies = [
     'pyts',
     'tables',
     'types-requests',
-    'requests'
+    'requests',
+    'pyarrow',
 ]
 
 [project.urls]

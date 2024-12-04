@@ -209,7 +209,7 @@ class SamplerResultGroup(Group):
             for fp in param_names:
                 self._cols[f"{fp}_median"] = lambda x, col=fp: x.fit_parameters[col].dropna().median()
                 
-        self._cols['score_median'] = lambda x: x.score.dropna().median()
+        self._cols['score_median'] = lambda x: np.nanmedian(x.score)
         self._cols['sampler'] = lambda x: x.sampler
         
         super().__init__(sampler_results)
@@ -274,6 +274,7 @@ class SamplerResultGroup(Group):
             num_samples = samples_per_class[sr_class]
             
             new_sr.fit_parameters = new_sr.fit_parameters.iloc[:num_samples,:]
+            new_sr.score = new_sr.score[:num_samples]
             self[sr_id[1:]] = new_sr
     
     

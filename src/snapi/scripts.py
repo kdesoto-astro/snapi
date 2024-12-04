@@ -72,6 +72,7 @@ def fit_transient_group(
     checkpoint_fn: Optional[str] = None,
     checkpoint_freq: int = 100,
     pad: bool=False,
+    overwrite: bool=False
 ) -> SamplerResultGroup:
     """Fit all transients in a group by the same Sampler
     with the same SamplerPrior. If parallelize, run
@@ -80,7 +81,7 @@ def fit_transient_group(
     fits.
     """
     
-    if checkpoint_fn and os.path.exists(checkpoint_fn): # first try loading checkpoint
+    if (not overwrite) and checkpoint_fn and os.path.exists(checkpoint_fn): # first try loading checkpoint
         sr_group = SamplerResultGroup.load(checkpoint_fn)
         sampler_results = [x for x in sr_group]
         # ignore transients already sampled
