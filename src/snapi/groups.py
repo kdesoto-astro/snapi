@@ -265,16 +265,18 @@ class SamplerResultGroup(Group):
             list(classes_filtered.values()), return_counts=True
         )
         samples_per_class = {
-            l: majority_samples * round(max(counts) / c) for (l, c) in zip(labels_unique, counts)
+            l: round(majority_samples * max(counts) / c) for (l, c) in zip(labels_unique, counts)
         }
         
         for sr_id in self.associated_objects.index:
             new_sr = self[sr_id[1:]]
             sr_class = classes_filtered[sr_id[1:]]
             num_samples = samples_per_class[sr_class]
-            
-            new_sr.fit_parameters = new_sr.fit_parameters.iloc[:num_samples,:]
-            new_sr.score = new_sr.score[:num_samples]
+            length = len(new_sr.fit_parameters)
+            tiled_idxs = np.tile(np.arange(length), num_samples // length + 1)
+
+            new_sr.fit_parameters = new_sr.fit_parameters.iloc[tiled_idxs[:num_samples],:]
+            new_sr.score = new_sr.score[tiled_idxs[:num_samples]]
             self[sr_id[1:]] = new_sr
     
     
