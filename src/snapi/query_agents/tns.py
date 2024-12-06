@@ -4,6 +4,8 @@ import os
 import time
 from collections import OrderedDict
 from typing import Any, List, Optional
+import zipfile
+from dotenv import load_dotenv
 
 import astropy.units as u
 import numpy as np
@@ -47,33 +49,67 @@ class TNSQueryAgent(QueryAgent):
         self._tns_header = {"User-Agent": header_phrase}
         self._timeout = 30.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
-        self._data_path = os.path.join(
+        self._base_path = self._data_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "data",
-            "tns_public_objects_05_22_24.csv",
+            "data"
         )
-        try:
-            self._local_df = pd.read_csv(self._data_path)
-
-            # in future, ensure only necessary columns are saved
-            keep_cols = [
-                "name_prefix",
-                "name",
-                "internal_names",
-                "ra",
-                "declination",
-                "redshift",
-                "type",
-            ]
-            self._local_df = self._local_df[keep_cols]
-            self._local_df.to_csv(self._data_path, index=False)
-            self._df_coords = SkyCoord(
-                ra=self._local_df["ra"].values * u.deg,  # pylint: disable=no-member
-                dec=self._local_df["declination"].values * u.deg,  # pylint: disable=no-member
-            )
-        except FileNotFoundError:
+        self._data_path = os.path.join(
+            self._base_path, "tns_public_objects.csv",
+        )
+        self._tns_full_db_path = "https://www.wis-tns.org/system/files/tns_public_objects/tns_public_objects.csv.zip"
+        if os.path.exists(self._data_path):
+            self._remove_unnecessary_db_columns()
+        else:
             self._local_df = None  # type: ignore
             self._df_coords = None
+
+    def _remove_unnecessary_db_columns(self) -> None:
+        """Remove unnecessary columns so stored DB is of
+        reasonable file size.
+        """
+        self._local_df = pd.read_csv(self._data_path)
+
+        # in future, ensure only necessary columns are saved
+        keep_cols = [
+            "name_prefix",
+            "name",
+            "internal_names",
+            "ra",
+            "declination",
+            "redshift",
+            "type",
+        ]
+        self._local_df = self._local_df[keep_cols]
+        self._local_df.to_csv(self._data_path, index=False)
+        self._df_coords = SkyCoord(
+            ra=self._local_df["ra"].values * u.deg,  # pylint: disable=no-member
+            dec=self._local_df["declination"].values * u.deg,  # pylint: disable=no-member
+        )
+
+    def update_local_database(self) -> None:
+        """Re-query TNS for an updated local database.
+        """
+        os_prompt = f'''curl -X POST -H 'user-agent: tns_marker{{"tns_id":{self._tns_bot_id},'''
+        os_prompt += f'''"type": "bot", "name":"{self._tns_bot_name}"}}' -d '''
+        os_prompt += f'''"api_key={self._tns_api_key}" '''
+        os_prompt += f'''{self._tns_full_db_path} > {self._data_path}.zip'''
+        print(os_prompt)
+        os.system(os_prompt)
+
+        # unzip the resulting file
+        with zipfile.ZipFile(f"{self._data_path}.zip", 'r') as zip_ref:
+            zip_ref.extractall(os.path.join(self._base_path, "tmp"))
+        tmp_path = os.path.join(
+            self._base_path, f'tmp/{self._tns_full_db_path.rsplit("/", maxsplit=1)[-1][:-4]}'
+        )
+        os.rename(tmp_path, self._data_path)
+        os.remove(f"{self._data_path}.zip")
+
+        # weird extra top row
+        tmp_df = pd.read_csv(self._data_path, header=1)
+        tmp_df.to_csv(self._data_path)
+        
+        self._remove_unnecessary_db_columns()
 
     def _format_light_curves(self, lc_dict: dict[str, dict[str, Any]]) -> set[LightCurve]:
         """
@@ -182,6 +218,12 @@ class TNSQueryAgent(QueryAgent):
         """
         Load TNS credentials from environment variables.
         """
+        env_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            ".env"
+        )
+        load_dotenv(dotenv_path=env_path)
+
         self._tns_bot_id = os.getenv("TNS_BOT_ID")
         self._tns_bot_name = os.getenv("TNS_BOT_NAME")
         self._tns_api_key = os.getenv("TNS_API_KEY")
@@ -270,7 +312,9 @@ class TNSQueryAgent(QueryAgent):
 
         if "local" in kwargs and kwargs["local"]:
             if self._local_df is None:
-                return results, False
+                print("Local database not installed, installing now.")
+                self.update_local_database()
+
             matches = self._local_df.isin(names_arr)["name"].to_numpy()
             r_all = self._local_df[matches]
             for i, r_local in r_all.iterrows():
@@ -328,7 +372,9 @@ class TNSQueryAgent(QueryAgent):
 
         if "local" in kwargs and kwargs["local"]:
             if self._local_df is None:
-                return results, False
+                print("Local database not installed, installing now.")
+                self.update_local_database()
+
             for coord in coords_arr:
                 rad = self._radius * u.arcsec  # pylint: disable=no-member
                 # Perform the cone search
@@ -391,7 +437,9 @@ class TNSQueryAgent(QueryAgent):
         spectroscopic class. Requires local database to be loaded.
         """
         if self._local_df is None:
-            raise ValueError("Local database not loaded.")
+            print("Local database not installed, installing now.")
+            self.update_local_database()
+            
         if known_class:
             return self._local_df[~self._local_df.isnull()["type"]]["name"].to_numpy()
         return self._local_df["name"].to_numpy()
