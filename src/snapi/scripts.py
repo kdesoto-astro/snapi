@@ -80,10 +80,9 @@ def fit_transient_group(
     save checkpointed SamplerResultGroup every checkpoint_freq
     fits.
     """
-    
     if (not overwrite) and checkpoint_fn and os.path.exists(checkpoint_fn): # first try loading checkpoint
         sr_group = SamplerResultGroup.load(checkpoint_fn)
-        sampler_results = [x for x in sr_group]
+        sampler_results = [x for x in sr_group if x.id in transient_group.metadata.index]
         # ignore transients already sampled
         sampled_names = sr_group.metadata.index
         transients = [x for x in transient_group if x.id not in sampled_names]
@@ -112,7 +111,7 @@ def fit_transient_group(
                 flattened_result = list(itertools.chain(*result))
                 sampler_results.extend(flattened_result)
                 SamplerResultGroup(sampler_results).save(checkpoint_fn)
-                print(f"Finished checkpoint {i} of {num_checkpoints}")
+                print(f"Finished checkpoint {i+1} of {num_checkpoints}")
                 
         else:
             transient_batches = [transients[i::n_parallel] for i in range(n_parallel)]
