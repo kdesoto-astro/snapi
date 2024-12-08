@@ -574,6 +574,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
                 self._ts.set_index(
                     self._ts.index - t0_units, inplace=True
                 )
+
             self._ts.index.name = "phase"
             self._phased = True
         else:

@@ -49,7 +49,7 @@ class TNSQueryAgent(QueryAgent):
         self._tns_header = {"User-Agent": header_phrase}
         self._timeout = 30.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
-        self._base_path = self._data_path = os.path.join(
+        self._base_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
             "data"
         )
@@ -93,7 +93,6 @@ class TNSQueryAgent(QueryAgent):
         os_prompt += f'''"type": "bot", "name":"{self._tns_bot_name}"}}' -d '''
         os_prompt += f'''"api_key={self._tns_api_key}" '''
         os_prompt += f'''{self._tns_full_db_path} > {self._data_path}.zip'''
-        print(os_prompt)
         os.system(os_prompt)
 
         # unzip the resulting file
@@ -108,7 +107,7 @@ class TNSQueryAgent(QueryAgent):
         # weird extra top row
         tmp_df = pd.read_csv(self._data_path, header=1)
         tmp_df.to_csv(self._data_path)
-        
+
         self._remove_unnecessary_db_columns()
 
     def _format_light_curves(self, lc_dict: dict[str, dict[str, Any]]) -> set[LightCurve]:
