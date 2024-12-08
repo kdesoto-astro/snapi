@@ -19,7 +19,7 @@ dependencies = [
     'astropy',
     'colorcet',
     'dill',
-    'dotenv',
+    'python-dotenv',
     'dustmaps',
     'extinction',
     'george',
