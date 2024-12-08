@@ -1,7 +1,7 @@
 # DUSTMAPS
 data/dustmaps/*
 data/ghost_db/database/GHOST.csv
-data/tns_public_objects_05_22_24.csv
+data/tns_public_objects.csv
 
 # API KEYS
 src/snapi/api_keys.py
