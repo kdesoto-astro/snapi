@@ -299,7 +299,7 @@ class SamplerResultGroup(Group):
         """Return all samples from all objects as a dataframe."""
         
         combined_df = None
-        meta_cols = [x for x in self._cols if x[:-6] != 'median']
+        meta_cols = [x for x in self._cols if x[-6:] != 'median']
         
         for sr_id in self.associated_objects.index:
             sr = self[sr_id[1:]]
