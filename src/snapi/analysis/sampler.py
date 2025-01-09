@@ -210,7 +210,8 @@ class Sampler(BaseEstimator):  # type: ignore
         self.result: Optional[SamplerResult] = None
 
     def _validate_arrs(
-        self, X: NDArray[np.object_], y: NDArray[np.float64]
+        self, X: NDArray[np.object_], y: NDArray[np.float64],
+        event_indices=None,
     ) -> tuple[NDArray[np.object_], NDArray[np.float64]]:
         """Broadcasts X and y to right shape, and checks that both arrays are valid inputs.
         Allows bands to be strings, enforces floats
@@ -234,7 +235,24 @@ class Sampler(BaseEstimator):  # type: ignore
         # remove nan/inf rows
         mask = np.all(np.isfinite(X[:, 2].astype(np.float64))) & np.isfinite(y)
 
-        return X[mask], y[mask]
+        if event_indices is not None:
+            # Prepare new index ranges
+            cumsum_mask = np.cumsum(mask)
+
+            # Prepare new index ranges
+            new_index_ranges = []
+
+            for original_start, original_end in event_indices:
+                # Adjust the start and end indices based on the cumulative mask
+                num_retained_before_start = cumsum_mask[original_start - 1] if original_start > 0 else 0
+                num_retained_before_end = cumsum_mask[original_end - 1] - mask[0]
+
+                # Append the updated range directly
+                new_index_ranges.append((num_retained_before_start, num_retained_before_end))
+
+            return X[mask], y[mask], np.array(new_index_ranges)
+
+        return X[mask], y[mask], None
     
     @property
     def name(self) -> str:
@@ -245,6 +263,7 @@ class Sampler(BaseEstimator):  # type: ignore
         self,
         X: NDArray[np.object_],  # pylint: disable=invalid-name
         y: NDArray[np.float64],
+        event_indices=None
     ) -> None:
         """Fit the data.
 
@@ -256,8 +275,8 @@ class Sampler(BaseEstimator):  # type: ignore
         y : np.ndarray
             The y data to fit.
         """
-        self._X, self._y = self._validate_arrs(
-            X, y
+        self._X, self._y, self._idxs = self._validate_arrs(
+            X, y, event_indices
         )  # pylint: disable=attribute-defined-outside-init, invalid-name
         self.result = None  # where FitResult will be stored.
 
@@ -284,7 +303,7 @@ class Sampler(BaseEstimator):  # type: ignore
         # Check if fit has been called
         check_is_fitted(self, "_is_fitted")
         placeholder_y = np.zeros(X.shape[0])
-        val_x, _ = self._validate_arrs(X, placeholder_y)
+        val_x, _, _ = self._validate_arrs(X, placeholder_y)
 
         if num_fits:
             return val_x[:num_fits, 0].astype(np.float64), val_x  # Placeholder for actual prediction
@@ -309,18 +328,14 @@ class Sampler(BaseEstimator):  # type: ignore
         check_is_fitted(self, "_is_fitted")
 
         # Input validation
-        val_x, val_y = self._validate_arrs(X, y)
+        val_x, val_y, _ = self._validate_arrs(X, y)
         y_pred, _ = self.predict(val_x)
         return self._reduced_chi_squared(val_x, val_y, y_pred, **kwargs)
 
     def _convert_photometry_to_arrs(
-        self, photometry: Photometry
+        self, photometry: Photometry,
     ) -> tuple[NDArray[np.object_], NDArray[np.float64]]:
         """Converts a Photometry object to arrays for fitting."""
-        # first rescale the photometry
-        photometry.phase()
-        # adjust so max flux = 1.0
-        photometry.normalize()
         dets = photometry.detections
         dets_mjd = dets.index.total_seconds().to_numpy() / (24 * 3600)
         if self._mag_y:
@@ -330,6 +345,31 @@ class Sampler(BaseEstimator):  # type: ignore
 
         y = dets["mag"].to_numpy() if self._mag_y else dets["flux"].to_numpy()
         return x_arr, y
+    
+    def _convert_hierarchical_photometry_to_arrs(
+        self, photometry_arr: list[Photometry],
+    ) -> tuple[NDArray[np.object_], NDArray[np.float64]]:
+        """Converts many Photometry object to arrays for hierarchical fitting."""
+        full_x = None
+        full_y = None
+        start_idxs = []
+        end_idxs = []
+
+        for phot in photometry_arr:
+            x_arr, y = self._convert_photometry_to_arrs(phot)
+
+            if full_x is None:
+                full_x = x_arr
+                full_y = y
+                start_idxs.append(0)
+            else:
+                start_idxs.append(len(full_y))
+                full_x = np.vstack((full_x, x_arr))
+                full_y = np.append(full_y, y)
+                
+            end_idxs.append(len(full_y))
+
+        return full_x, full_y, np.array([start_idxs, end_idxs]).T
 
     def fit_photometry(self, photometry: Photometry, **kwargs) -> None:
         """Fit a Photometry object. Saves information to
@@ -341,6 +381,17 @@ class Sampler(BaseEstimator):  # type: ignore
         """
         x_phot, y_phot = self._convert_photometry_to_arrs(photometry)
         self.fit(x_phot, y_phot, **kwargs)
+
+    def fit_photometry_hierarchical(self, photometry_arr: list[Photometry], **kwargs) -> None:
+        """Fit a Photometry object. Saves information to
+        Photometry object.
+
+        Parameters
+        ----------
+            The Photometry object to fit.
+        """
+        x_phot, y_phot, idxs = self._convert_hierarchical_photometry_to_arrs(photometry_arr)
+        self.fit(x_phot, y_phot, event_indices=idxs, **kwargs)
 
     def predict_photometry(
         self, photometry: Photometry
@@ -397,6 +448,10 @@ class Sampler(BaseEstimator):  # type: ignore
                 y_pred, val_x = self.predict(new_x)
             else:
                 y_pred, val_x = self.predict(X[X[:, 1] == b])
+            if len(y_pred) == 0:
+                formatter.rotate_colors()
+                formatter.rotate_markers()
+                continue
             ax.plot(
                 val_x[:, 0],
                 y_pred[0],

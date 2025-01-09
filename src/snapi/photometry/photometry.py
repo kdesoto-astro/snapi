@@ -79,10 +79,11 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         
     def update(self) -> None:
         """Update steps needed upon modifying child attributes."""
+        super().update()
         if self._ts is None:
             self._unique_filters = []
         else:
-            self._unique_filters = self._ts["filter"].unique()
+            self._unique_filters = np.unique(self._ts["filter"])
         self._sort()
     
     def _filter_single(self, filter_name: str) -> pd.DataFrame:

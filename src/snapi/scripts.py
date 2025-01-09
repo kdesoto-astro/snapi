@@ -60,6 +60,8 @@ def single_transient_fit(transient, sampler, pad):
         sampler.fit_photometry(transient.photometry)
         
     r = sampler.result
+    if r is None:
+        return None
     r.id = transient.id
         
     return r
@@ -110,6 +112,7 @@ def fit_transient_group(
                     
                 flattened_result = list(itertools.chain(*result))
                 sampler_results.extend(flattened_result)
+                sampler_results = [x for x in sampler_results if x is not None]
                 SamplerResultGroup(sampler_results).save(checkpoint_fn)
                 print(f"Finished checkpoint {i+1} of {num_checkpoints}")
                 
@@ -117,6 +120,7 @@ def fit_transient_group(
             transient_batches = [transients[i::n_parallel] for i in range(n_parallel)]
             results = pool.starmap(single_transient_fit_static, zip(transient_batches, samplers))
             sampler_results.extend(results)
+            sampler_results = [x for x in sampler_results if x is not None]
             
     else:
         single_transient_fit_static = partial(
@@ -127,8 +131,64 @@ def fit_transient_group(
             sampler_results.append(single_transient_fit_static(t, sampler))
             if checkpoint_fn and ((i+1) % checkpoint_freq == 0):
                 print(f"Checkpointing...{i+1} of {len(transients)}")
+                sampler_results = [x for x in sampler_results if x is not None]
                 SamplerResultGroup(sampler_results).save(checkpoint_fn)
                 
+    sampler_results = [x for x in sampler_results if x is not None]
     return sampler_results
+
+
+def fit_many_hierarchical(
+    transient_group: TransientGroup,
+    num_events: int,
+    sampler: Sampler,
+    pad: bool=False,
+):
+    """Use hierarchical Bayesian sampling to jointly fit many transients.
+    """
+    all_ids = [t.id for t in transient_group][-1*num_events:]
+
+    if pad:
+        all_phot_lens = [len(t.photometry.detections) for t in transient_group]
+        num_pad = np.max(all_phot_lens)
+
+        all_padded_phots = []
+        orig_sizes = []
+
+        for i, t in enumerate(transient_group):
+            if i >= num_events:
+                break
+            padded_lcs = set()
+            fill = {'phase': 1000., 'flux': 0.1, 'flux_error': 1000., 'zeropoint': 23.90, 'upper_limit': False}
+
+            padded_lcs = []
+            orig_size = len(t.photometry.detections)
+            for lc in t.photometry.light_curves:
+                padded_lc=lc.pad(fill, num_pad - len(lc.detections))
+                padded_lcs.append(padded_lc)
+                
+            padded_photometry = Photometry.from_light_curves(padded_lcs)
+            all_padded_phots.append(padded_photometry)
+            orig_sizes.append(orig_size)
+    else:
+        all_padded_phots = [t.photometry for t in transient_group][-1*num_events:]
+        orig_sizes = [len(phot.detections) for phot in all_padded_phots]
+
+    print("Starting hierarchical fit")
+    print(orig_sizes)
+    sampler.fit_photometry_hierarchical(all_padded_phots, orig_num_times=orig_sizes)
+    results = sampler.result
+
+    indiv_results = results[2:]
+    prior_results = results[0:2]
+
+    for i, r in enumerate(indiv_results):
+        t_id = all_ids[i]
+        r.id = t_id
+
+    return prior_results, indiv_results
+
+
+
         
         
