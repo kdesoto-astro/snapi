@@ -34,8 +34,9 @@ class Group(Base):
         
         
     def update(self):
-        """Update meta-dataframe."""    
-        # keep pandas df for metadata        
+        """Update meta-dataframe."""
+        self.associated_objects.sort_index(inplace=True)
+        # keep pandas df for metadata 
         extracted_dicts = []
         for t_id in self.associated_objects.index:
             extracted_dicts.append(self._extract_meta(getattr(self, t_id)))

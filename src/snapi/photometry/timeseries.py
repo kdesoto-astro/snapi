@@ -190,6 +190,7 @@ class TimeSeries(Base):
             new_times = [row["phase"] for row in rows]
             new_index_td = pd.to_timedelta(new_times, "D")
             new_df = pd.DataFrame.from_records(rows, index=new_index_td)
+            new_df.rename(columns=self._alias_map, inplace=True)
             new_df.drop(columns="phase", inplace=True)
             new_df.index.name = "phase"
             
@@ -197,6 +198,7 @@ class TimeSeries(Base):
             new_times = [self._convert_to_datetime(row["mjd"]) for row in rows]
             new_index_dt = pd.DatetimeIndex(new_times)
             new_df = pd.DataFrame.from_records(rows, index=new_index_dt)
+            new_df.rename(columns=self._alias_map, inplace=True)
             new_df.drop(columns="mjd", inplace=True)
             new_df.index.name = "mjd"
         if self._ts is None:
