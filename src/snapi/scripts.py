@@ -1,6 +1,7 @@
 # Scripts that bridge the transition between classes
 import os
 
+#os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=8"
 # Set JAX to use CPU
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 # Disable GPU visibility
@@ -15,13 +16,17 @@ import copy
 import multiprocess as mp
 import logging
 import numpy as np
-import jax
+from jax import config, device_count
 
 from .groups import TransientGroup, SamplerResultGroup
-from .analysis import Sampler, SamplerResult
+from .analysis import Sampler
 from .photometry import Photometry
     
-jax.config.update('jax_platform_name', 'cpu')
+config.update('jax_platform_name', 'cpu')
+#print(device_count('cpu'))
+
+import numpyro
+numpyro.enable_validation()
 
 # Configure logging
 logging.basicConfig(
@@ -175,7 +180,7 @@ def fit_many_hierarchical(
         orig_sizes = [len(phot.detections) for phot in all_padded_phots]
 
     print("Starting hierarchical fit")
-    print(orig_sizes)
+    print(np.max(orig_sizes))
     sampler.fit_photometry_hierarchical(all_padded_phots, orig_num_times=orig_sizes)
     results = sampler.result
 

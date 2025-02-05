@@ -202,15 +202,18 @@ class ATLASQueryAgent(QueryAgent):
         flux_nan_mask = ~pd.isna(lc_df["uJy"])
         lc_df = lc_df.loc[dflux_zero_mask & flux_nan_mask, :]
         lc_df, summary_df = self._subtract_fps_baseline(lc_df)
+
         if lc_df is None:
             return []
 
         fqcf_keep = summary_df.index[summary_df['flags'] == 0].unique()
         lc_df = lc_df.loc[
-            (lc_df.F.isin(fqcf_keep) & (lc_df["flags"] == 0))
+            (lc_df.F.isin(fqcf_keep) & (lc_df["flags"] == 0)),
+            [*list(self._col_renames.keys()), 'F']
         ]
 
         lc_df.rename(columns=self._col_renames, inplace=True)
+
         lc_df["zpt"] = 23.9
 
         lcs = []

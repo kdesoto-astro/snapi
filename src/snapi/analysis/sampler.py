@@ -25,14 +25,17 @@ class SamplerPrior(Base):
     
     def __init__(
         self,
-        prior_info: pd.DataFrame
+        prior_info: Optional[pd.DataFrame] = None
     ):
         """Stores prior information for the Sampler."""
         super().__init__()
-        self._df = prior_info
-        self._rng = np.random.default_rng()
-        self.arr_attrs.append("_df")
-        self.update()
+        if prior_info is not None:
+            self._df = prior_info
+            self._rng = np.random.default_rng()
+            self.arr_attrs.append("_df")
+            self.update()
+        else:
+            self._df = None
         
     def update(self) -> None:
         """Rearrange priors so correlated priors are sampled
@@ -245,7 +248,7 @@ class Sampler(BaseEstimator):  # type: ignore
             for original_start, original_end in event_indices:
                 # Adjust the start and end indices based on the cumulative mask
                 num_retained_before_start = cumsum_mask[original_start - 1] if original_start > 0 else 0
-                num_retained_before_end = cumsum_mask[original_end - 1] - mask[0]
+                num_retained_before_end = cumsum_mask[original_end - 1]
 
                 # Append the updated range directly
                 new_index_ranges.append((num_retained_before_start, num_retained_before_end))

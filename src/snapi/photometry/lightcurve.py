@@ -124,8 +124,12 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             missing_magunc = missing_magunc & np.isnan(self._ts["mag_error"])
         sub_table = self._ts[missing_magunc]
         if len(sub_table) > 0:
-            self._ts.loc[missing_magunc, "mag_error"] = (
-                2.5 / np.log(10.0) * (sub_table["flux_error"] / sub_table["flux"])
+            self._ts.loc[missing_magunc, "mag_error"] = np.where(
+                sub_table['flux'] > 0.,
+                (
+                    2.5 / np.log(10.0) * (sub_table["flux_error"] / sub_table["flux"])
+                ),
+                np.nan
             )
 
         missing_flux = (~np.isnan(self._ts["zeropoint"])) & (~np.isnan(self._ts["mag"]))

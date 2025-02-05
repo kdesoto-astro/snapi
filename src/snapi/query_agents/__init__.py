@@ -5,6 +5,7 @@ from .ghost import GHOSTQueryAgent
 from .query_agent import QueryAgent
 from .query_result import QueryResult
 from .tns import TNSQueryAgent
+from .yse import YSEQueryAgent
 
 __all__ = [
     "QueryAgent",
@@ -14,4 +15,5 @@ __all__ = [
     "ANTARESQueryAgent",
     "ATLASQueryAgent",
     "GHOSTQueryAgent",
+    "YSEQueryAgent",
 ]

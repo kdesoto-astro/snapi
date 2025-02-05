@@ -273,7 +273,7 @@ class TNSQueryAgent(QueryAgent):
         reset = get_reset_time(r)
         if reset is not None:
             time.sleep(reset + 1)
-        out: dict[str, Any] = r.json()["data"]["reply"]
+        out: dict[str, Any] = r.json()["data"]
         return out
 
     def _tns_spec_helper(self, file_tns_url: str) -> NDArray[np.float32]:
