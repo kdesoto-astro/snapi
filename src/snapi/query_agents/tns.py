@@ -20,6 +20,14 @@ from ..spectrum import Spectrometer, Spectrum
 from .query_agent import QueryAgent
 from .query_result import QueryResult
 
+def is_castable_to_float(value):
+    """check if value can be cast to a float.
+    """
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
 def get_reset_time(response: requests.Response) -> Optional[int]:
     """Determine time needed to sleep before submitting new
@@ -114,21 +122,21 @@ class TNSQueryAgent(QueryAgent):
         """
         Format light curves into LightCurve objects.
         """
-        light_curves = set()
+        light_curves = []
         for phot_dict in lc_dict.values():
             phot_df = pd.DataFrame({k: v for k, v in phot_dict.items() if k != "filt"})
             phot_df.replace('', 'nan', inplace=True)
             phot_df = phot_df.astype(np.float32)
 
-            light_curve = LightCurve(
-                times=Time(phot_df["times"], format='jd', scale='utc'),  # pylint: disable=no-member
+            light_curve = LightCurve.from_arrays(
+                mjd=Time(phot_df["times"], format='jd', scale='utc').mjd,  # pylint: disable=no-member
                 mags=phot_df["mags"],
                 mag_errs=phot_df["mag_errs"],
                 upper_limits=np.zeros_like(phot_df["mags"], dtype=bool),
                 # zpts=phot_dict["zpts"],
                 filt=phot_dict['filt'],
             )
-            light_curves.add(light_curve)
+            light_curves.append(light_curve)
         return light_curves
 
     def _format_spectra(self, query_spectra: List[dict[str, Any]]) -> set[Spectrum]:
@@ -136,7 +144,7 @@ class TNSQueryAgent(QueryAgent):
         Format spectra into Spectrum objects.
         """
         # extract spectra
-        spectra = set()
+        spectra = []
         for spec in query_spectra:
             file_tns_url = spec["asciifile"]
             wv, flux = self._tns_spec_helper(file_tns_url)
@@ -148,7 +156,7 @@ class TNSQueryAgent(QueryAgent):
                 wavelength_delta=wv[1] - wv[0],
                 num_channels=len(wv),
             )
-            spectra.add(
+            spectra.append(
                 Spectrum(
                     time=Time(spec["jd"], format="jd"),  # pylint: disable=no-member
                     fluxes=flux,
@@ -194,10 +202,14 @@ class TNSQueryAgent(QueryAgent):
                     "filt": filt,
                 }
         light_curves = self._format_light_curves(lc_dict)
-        spectra = self._format_spectra(query_result["spectra"])
+        
+        if "spectra" in query_result:
+            spectra = self._format_spectra(query_result["spectra"])
+        else:
+            spectra = []
 
-        if query_result["object_type"] not in ["nan", ""]:
-            spec_class = str(query_result["object_type"])
+        if query_result["object_type"]["name"] not in ["nan", ""]:
+            spec_class = str(query_result["object_type"]["name"])
         else:
             spec_class = None
 
@@ -257,7 +269,7 @@ class TNSQueryAgent(QueryAgent):
         reset = get_reset_time(r)
         if reset is not None:
             time.sleep(reset + 1)
-        out: List[dict[str, Any]] = r.json()["data"]["reply"]
+        out: List[dict[str, Any]] = r.json()["data"]
         return out
 
     def _tns_object_helper(self, obj_name: str) -> dict[str, Any]:
@@ -273,8 +285,9 @@ class TNSQueryAgent(QueryAgent):
         reset = get_reset_time(r)
         if reset is not None:
             time.sleep(reset + 1)
-        out: dict[str, Any] = r.json()["data"]["reply"]
+        out: dict[str, Any] = r.json()["data"]
         return out
+
 
     def _tns_spec_helper(self, file_tns_url: str) -> NDArray[np.float32]:
         """Helper function to retrieve spectra from TNS.
@@ -298,7 +311,8 @@ class TNSQueryAgent(QueryAgent):
             return np.array([[], []])
         text = response.text
         arr = [x.split() for x in text.split("\n") if (len(x) > 0 and x[0] != "#")]
-        arr = [[x[0], x[1].strip("\r")] for x in arr if len(x) > 1]
+        arr = [[x[0], x[1].strip("\r")] for x in arr if (len(x) > 1) and (is_castable_to_float(x[0]))]
+
         return np.array(arr).T.astype(np.float32)
 
     def query_by_name(self, names: Any, **kwargs: Any) -> tuple[List[QueryResult], bool]:
