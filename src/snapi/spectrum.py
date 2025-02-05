@@ -121,6 +121,7 @@ class Spectrum(Measurement, Plottable):
         self._errors = np.pad(errors, (0, max_len - len(errors)), constant_values=np.nan).astype(np.float64)
         
         self.arr_attrs.extend(["_fluxes", "_errors", "_wavelengths"])
+        self._initialize_assoc_objects()
         self.associated_objects.loc['_spectrometer'] = {'type': Spectrometer.__name__}
         self.meta_attrs.append("_time")
 

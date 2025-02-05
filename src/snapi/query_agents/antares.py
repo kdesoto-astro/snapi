@@ -1,6 +1,5 @@
 """Contains TNSQueryAgent for querying transient objects from ALeRCE."""
 from typing import Any, List, Mapping
-
 import astropy.units as u
 import numpy as np
 import pandas as pd
@@ -42,13 +41,15 @@ class ANTARESQueryAgent(QueryAgent):
         """
         Format query result into QueryResult object.
         """
+        internal_names = {query_result["internal_name"],}
+        if query_result['id'] is not None:
+            internal_names.add(query_result['id'])
         return QueryResult(
             objname=query_result["objname"],
-            internal_names={
-                query_result["internal_name"],
-            },
+            internal_names=internal_names,
             coordinates=query_result["coords"],
             light_curves=query_result["light_curves"],
+            spec_class=query_result["spec_class"]
         )
 
     def _cone_search_helper(self, center: SkyCoord, radius: u.Quantity) -> list[Locus]:
@@ -110,8 +111,16 @@ class ANTARESQueryAgent(QueryAgent):
             )
             lc = LightCurve(df[mask], filt=filt)
             lcs.append(lc)
+            
+        # retrieve TNS name
+        if 'tns_public_objects' in locus.catalog_objects:
+            tns_name = locus.catalog_objects['tns_public_objects'][0]['name']
+            spec_class = locus.catalog_objects['tns_public_objects'][0].get('type', None)
+        else:
+            tns_name = None
+            spec_class = None
 
-        return ra, dec, lcs
+        return ra, dec, lcs, tns_name, spec_class
 
     def query_by_name(self, names: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
         """
@@ -127,16 +136,18 @@ class ANTARESQueryAgent(QueryAgent):
                 if locus is None:
                     results.append(QueryResult())
                     continue
-                ra, dec, lcs = self._locus_helper(locus)
+                ra, dec, lcs, tns_name, spec_class = self._locus_helper(locus)
                 results.append(
                     self._format_query_result(
                         {
+                            "id": tns_name,
                             "internal_name": locus.locus_id,
                             "objname": locus.properties["ztf_object_id"],
                             "coords": SkyCoord(
                                 ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
                             ),  # pylint: disable=no-member
                             "light_curves": lcs,
+                            "spec_class": spec_class,
                         }
                     )
                 )
@@ -158,17 +169,19 @@ class ANTARESQueryAgent(QueryAgent):
         for coord in coords_arr:
             try:
                 for locus in self._cone_search_helper(coord, self._radius):
-                    ra, dec, lcs = self._locus_helper(locus)
+                    ra, dec, lcs, tns_name, spec_class = self._locus_helper(locus)
 
                     results.append(
                         self._format_query_result(
                             {
+                                "id": tns_name,
                                 "internal_name": locus.locus_id,
                                 "objname": locus.properties["ztf_object_id"],
                                 "coords": SkyCoord(
                                     ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
                                 ),  # pylint: disable=no-member
                                 "light_curves": lcs,
+                                "spec_class": spec_class,
                             }
                         )
                     )
