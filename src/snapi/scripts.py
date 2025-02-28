@@ -178,9 +178,9 @@ def fit_many_hierarchical(
     else:
         all_padded_phots = [t.photometry for t in transient_group][-1*num_events:]
         orig_sizes = [len(phot.detections) for phot in all_padded_phots]
+        print(np.max(orig_sizes))
 
     print("Starting hierarchical fit")
-    print(np.max(orig_sizes))
     sampler.fit_photometry_hierarchical(all_padded_phots, orig_num_times=orig_sizes)
     results = sampler.result
 

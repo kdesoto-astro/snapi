@@ -302,6 +302,7 @@ class SamplerResultGroup(Group):
         combined_df = None
         meta_cols = [x for x in self._cols if x[-6:] != 'median']
         
+        dfs = []
         for sr_id in self.associated_objects.index:
             sr = self[sr_id[1:]]
             df = sr.fit_parameters
@@ -310,11 +311,9 @@ class SamplerResultGroup(Group):
             df['score'] = sr.score
             df['id'] = sr_id[1:]
             df.set_index('id', inplace=True)
-            if combined_df is None:
-                combined_df = df
-            else:
-                combined_df = pd.concat([combined_df, df])
-        
+            dfs.append(df)
+
+        combined_df = pd.concat(dfs)
         return combined_df
     
     def umap(self, ax, classes: Optional[pd.DataFrame] = None, formatter=Formatter()):

@@ -154,7 +154,7 @@ class SamplerResult(Base):
             features[:,i] += np.random.normal(scale=np.std(features) / 1e3, size=len(features))
             
         nan_features = np.any(np.isnan(features), axis=1)
-        mapper = umap.UMAP().fit(features[~nan_features], force_all_finite=False)
+        mapper = umap.UMAP().fit(features[~nan_features], ensure_all_finite=False)
         
         if diagnostic is None:
             ax = umap.plot.points(
@@ -233,7 +233,7 @@ class Sampler(BaseEstimator):  # type: ignore
         if y.ndim != 1:
             raise ValueError("y must be one-dimensional.")
 
-        check_array(y, ensure_2d=False, force_all_finite=False)
+        check_array(y, ensure_2d=False, ensure_all_finite=False)
 
         # remove nan/inf rows
         mask = np.all(np.isfinite(X[:, 2].astype(np.float64))) & np.isfinite(y)
@@ -442,7 +442,9 @@ class Sampler(BaseEstimator):  # type: ignore
             X = self._X
         if formatter is None:
             formatter = Formatter()
-        for b in photometry._unique_filters:
+        #for b in photometry._unique_filters:
+        #print(X)
+        for b in np.unique(X[:,1]):
             if dense:
                 t_arr = np.linspace(np.min(X[:, 0]) - 20.0, np.max(X[:, 0]) + 20.0, 1000)
                 new_x = np.repeat(t_arr[np.newaxis, :].T, 3, axis=1).astype(object)

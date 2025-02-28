@@ -55,10 +55,12 @@ class ALeRCEQueryAgent(QueryAgent):
         nondetections.dropna(axis=1, inplace=True)
         all_detections = pd.concat([detections, nondetections], copy=False, ignore_index=True)
 
-        if "forced_photometry" in lc:  # not available with older versions of alerce-client
-            forced_detections = pd.DataFrame(lc["non_detections"].item())
+        try: # forced phot available in alerce-1.3 or newer
+            forced_detections = self._client.query_forced_photometry(objname, format="pandas")
             forced_detections.dropna(axis=1, inplace=True)
             all_detections = pd.concat([all_detections, forced_detections], ignore_index=True)
+        except:
+            pass
 
         if "mjd" not in all_detections.columns:
             return [], False

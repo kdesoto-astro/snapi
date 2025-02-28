@@ -3,6 +3,8 @@ import os
 from typing import Any, List, Mapping
 
 import astropy.units as u
+from astropy.timeseries import TimeSeries
+import astropy.units as u
 import numpy as np
 import pandas as pd
 from astropy.coordinates import SkyCoord
@@ -54,7 +56,7 @@ class YSEQueryAgent(QueryAgent):
             'SPEC_CLASS',
             'SPEC_CLASS_BROAD',
             'RA',
-            'DEC',
+            'DECL',
         ]
         with open(fn, 'r', encoding='utf-8') as f:
             for i, row in enumerate(f):
@@ -71,9 +73,15 @@ class YSEQueryAgent(QueryAgent):
 
         lcs = []
 
-        df = pd.read_csv(fn, skiprows=header, delim_whitespace=True, skipfooter=1)
-        df = df[['MAG', 'MAGERR', 'FLT']]
-        df.rename(columns={'MJD': 'mjd', 'MAG': 'mag', 'MAGERR': 'mag_unc'})
+        df = pd.read_csv(
+            fn,
+            skiprows=header,
+            sep='\s+',
+            skipfooter=1,
+            engine='python'
+        )
+        df = df[['MJD', 'MAG', 'MAGERR', 'FLT']]
+        df.rename(columns={'MJD': 'mjd', 'MAG': 'mag', 'MAGERR': 'mag_unc'}, inplace=True)
         df['zpt'] = 23.9
 
         # convert to astropy Timeseries
@@ -86,15 +94,14 @@ class YSEQueryAgent(QueryAgent):
                 b_true = b
             df_b = df[df['FLT'] == b]
             df_b = df_b.drop(columns=['FLT'])
-            ts = TimeSeries.from_pandas(df_b)
             filt = Filter(
                 band=b_true,
                 instrument = 'ZTF' if b in ['X', 'Y'] else 'YSE',
-                center=BAND_WAVELENGTHS[b] * u.AA,
-                width=BAND_WIDTHS[b] * u.AA,
+                center=self._band_centers[b] * u.AA,
+                width=self._band_widths[b] * u.AA,
             )
             lc = LightCurve(
-                ts, filt=filt
+                df_b, filt=filt
             )
             lcs.append(lc)
         return lcs, meta
@@ -106,7 +113,7 @@ class YSEQueryAgent(QueryAgent):
         meta = query_result['meta']
         return QueryResult(
             objname=query_result["name"],
-            coordinates=SkyCoord(ra=meta["RA"], dec=meta["DEC"]),
+            coordinates=SkyCoord(ra=float(meta["RA"]) * u.deg, dec=float(meta["DECL"]) * u.deg),
             redshift=meta['REDSHIFT_FINAL'],
             spec_class=meta['SPEC_CLASS'],
             light_curves=query_result["light_curves"],

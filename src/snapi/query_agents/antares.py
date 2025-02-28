@@ -4,7 +4,8 @@ import astropy.units as u
 import numpy as np
 import pandas as pd
 from antares_client.models import Locus  # pylint: disable=import-error
-from antares_client.search import get_by_ztf_object_id, search  # pylint: disable=import-error
+from antares_client.search import get_by_ztf_object_id, get_by_id, search  # pylint: disable=import-error
+from antares_client.exceptions import AntaresException
 from astropy.coordinates import SkyCoord
 from astropy.table import MaskedColumn
 from astropy.time import Time
@@ -132,10 +133,13 @@ class ANTARESQueryAgent(QueryAgent):
 
         for name in names_arr:
             try:
-                locus = get_by_ztf_object_id(name)
-                if locus is None:
+                locus1 = get_by_ztf_object_id(name)
+                locus2 = get_by_id(name)
+                if (locus1 is None) and (locus2 is None):
                     results.append(QueryResult())
                     continue
+                else:
+                    locus = locus1 if (locus2 is None) else locus2
                 ra, dec, lcs, tns_name, spec_class = self._locus_helper(locus)
                 results.append(
                     self._format_query_result(
@@ -151,7 +155,7 @@ class ANTARESQueryAgent(QueryAgent):
                         }
                     )
                 )
-            except RuntimeError:
+            except (RuntimeError, AntaresException):
                 results.append(QueryResult())
 
         return results, True
