@@ -25,14 +25,17 @@ class SamplerPrior(Base):
     
     def __init__(
         self,
-        prior_info: pd.DataFrame
+        prior_info: Optional[pd.DataFrame] = None
     ):
         """Stores prior information for the Sampler."""
         super().__init__()
-        self._df = prior_info
-        self._rng = np.random.default_rng()
-        self.arr_attrs.append("_df")
-        self.update()
+        if prior_info is not None:
+            self._df = prior_info
+            self._rng = np.random.default_rng()
+            self.arr_attrs.append("_df")
+            self.update()
+        else:
+            self._df = None
         
     def update(self) -> None:
         """Rearrange priors so correlated priors are sampled
@@ -151,7 +154,7 @@ class SamplerResult(Base):
             features[:,i] += np.random.normal(scale=np.std(features) / 1e3, size=len(features))
             
         nan_features = np.any(np.isnan(features), axis=1)
-        mapper = umap.UMAP().fit(features[~nan_features], force_all_finite=False)
+        mapper = umap.UMAP().fit(features[~nan_features], ensure_all_finite=False)
         
         if diagnostic is None:
             ax = umap.plot.points(
@@ -230,7 +233,7 @@ class Sampler(BaseEstimator):  # type: ignore
         if y.ndim != 1:
             raise ValueError("y must be one-dimensional.")
 
-        check_array(y, ensure_2d=False, force_all_finite=False)
+        check_array(y, ensure_2d=False, ensure_all_finite=False)
 
         # remove nan/inf rows
         mask = np.all(np.isfinite(X[:, 2].astype(np.float64))) & np.isfinite(y)
@@ -245,7 +248,7 @@ class Sampler(BaseEstimator):  # type: ignore
             for original_start, original_end in event_indices:
                 # Adjust the start and end indices based on the cumulative mask
                 num_retained_before_start = cumsum_mask[original_start - 1] if original_start > 0 else 0
-                num_retained_before_end = cumsum_mask[original_end - 1] - mask[0]
+                num_retained_before_end = cumsum_mask[original_end - 1]
 
                 # Append the updated range directly
                 new_index_ranges.append((num_retained_before_start, num_retained_before_end))
@@ -439,7 +442,9 @@ class Sampler(BaseEstimator):  # type: ignore
             X = self._X
         if formatter is None:
             formatter = Formatter()
-        for b in photometry._unique_filters:
+        #for b in photometry._unique_filters:
+        #print(X)
+        for b in np.unique(X[:,1]):
             if dense:
                 t_arr = np.linspace(np.min(X[:, 0]) - 20.0, np.max(X[:, 0]) + 20.0, 1000)
                 new_x = np.repeat(t_arr[np.newaxis, :].T, 3, axis=1).astype(object)

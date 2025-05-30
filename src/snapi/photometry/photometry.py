@@ -188,7 +188,8 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
 
     def normalize(self: PhotT, inplace: bool=False) -> None:
         """Normalize the light curves in the set."""
-        peak_flux = self.detections['flux'].dropna().max()
+        peak_idx = (self.detections['flux'] - self.detections['flux_error']).dropna().idxmax()
+        peak_flux = np.max(self.detections.loc[peak_idx, 'flux'])
         
         if inplace:
             self.fluxes /= peak_flux
