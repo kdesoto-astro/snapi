@@ -48,7 +48,7 @@ class TNSQueryAgent(QueryAgent):
     QueryAgent for querying transient objects from TNS.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, db_path=None) -> None:
         self._url_search = "https://www.wis-tns.org/api/get/search"
         self._url_object = "https://www.wis-tns.org/api/get/object"
         self._load_tns_credentials()
@@ -57,10 +57,23 @@ class TNSQueryAgent(QueryAgent):
         self._tns_header = {"User-Agent": header_phrase}
         self._timeout = 30.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
-        self._base_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "data"
-        )
+        if db_path is None:
+            if os.path.exists(
+                os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                    "data"
+                )
+            ):
+                self._base_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                    "data"
+                )
+            else:
+                self._base_path = os.getcwd()
+        else:
+            self._base_path = db_path
+        
+        os.makedirs(self._base_path, exist_ok=True)
         self._data_path = os.path.join(
             self._base_path, "tns_public_objects.csv",
         )
