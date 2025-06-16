@@ -105,12 +105,6 @@ class ATLASQueryAgent(QueryAgent):
 
         if (ra, dec) in self._past_jobs:
             task_url, result_url = self._past_jobs[(ra, dec)]
-            if result_url is None:
-                print(ra, dec)
-                return None
-        else:
-            print(ra, dec)
-            return None
 
         while not task_url:
             with requests.Session() as s:
