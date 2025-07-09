@@ -8,6 +8,7 @@ from typing import Any, List, Mapping
 from dotenv import load_dotenv
 
 import astropy.units as u
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
@@ -105,12 +106,12 @@ class ATLASQueryAgent(QueryAgent):
 
         if (ra, dec) in self._past_jobs:
             task_url, result_url = self._past_jobs[(ra, dec)]
-            if result_url is None:
-                print(ra, dec)
-                return None
-        else:
-            print(ra, dec)
-            return None
+            #if result_url is None:
+            #    print(ra, dec)
+            #    return None
+        #else:
+        #    print(ra, dec)
+        #    return None
 
         while not task_url:
             with requests.Session() as s:
@@ -162,9 +163,19 @@ class ATLASQueryAgent(QueryAgent):
                             print(f"Task is running (started at {resp.json()['starttimestamp']})")
                             taskstarted_printed = True
                         time.sleep(2)
+                elif resp.status_code == 429:
+                    message = resp.json()["detail"]
+                    print(f"{resp.status_code} {message}")
+                    t_sec = re.findall(r"available in (\d+) seconds", message)
+                    t_min = re.findall(r"available in (\d+) minutes", message)
+                    if t_sec:
+                        waittime = int(t_sec[0])
+                    elif t_min:
+                        waittime = int(t_min[0]) * 60
                     else:
-                        # print(f"Waiting for job to start (queued at {resp.json()['timestamp']})")
-                        time.sleep(4)
+                        waittime = 10
+                    print(f"Waiting {waittime} seconds")
+                    time.sleep(waittime)
                 else:
                     print(f"ERROR {resp.status_code}")
                     print(resp.text)
@@ -191,13 +202,12 @@ class ATLASQueryAgent(QueryAgent):
             light_curves=query_result["light_curves"],
         )
 
-    def _atlas_lc_helper(self, ra: float, dec: float) -> list[LightCurve]:
+    def _atlas_lc_helper(self, ra: float, dec: float, min_mjd: float, max_mjd: float) -> list[LightCurve]:
         """Helper function that heavily uses ATClean's LightCurve class."""
-        min_mjd = 57233.0 # July 30, 2015
-        max_mjd = float(Time.now().mjd)
         lc_df = self._query_atlas(ra, dec, min_mjd, max_mjd)
         if lc_df is None:
             return []
+        
         dflux_zero_mask = lc_df["duJy"] > 0
         flux_nan_mask = ~pd.isna(lc_df["uJy"])
         lc_df = lc_df.loc[dflux_zero_mask & flux_nan_mask, :]
@@ -333,7 +343,7 @@ class ATLASQueryAgent(QueryAgent):
             peak_snr = flux_max/roll_unc.loc[roll_peak]
 
             #if (max_over_scatt > 5 and peak_snr > 5):
-            if peak_snr > 5:
+            if peak_snr > 3:
                 summary_df.loc[ufid, 'det_sn'] = True # SN detected in data
                 summary_df.loc[ufid, 't_fcqfid_max'] = t_max # estimated peak time for that filter
 
@@ -495,7 +505,9 @@ class ATLASQueryAgent(QueryAgent):
             try:
                 ra = coord.ra.value
                 dec = coord.dec.value
-                lcs = self._atlas_lc_helper(ra, dec)
+                min_mjd = kwargs.get('min_mjd', 57233.0)
+                max_mjd = kwargs.get('max_mjd', float(Time.now().mjd)) # July 30, 2015
+                lcs = self._atlas_lc_helper(ra, dec, min_mjd, max_mjd)
                 if len(lcs) == 0:
                     return [], False
                 results.append(
