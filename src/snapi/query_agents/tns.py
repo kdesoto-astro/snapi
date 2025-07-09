@@ -275,6 +275,10 @@ class TNSQueryAgent(QueryAgent):
         json_file = OrderedDict(search_query)
         search_data = {"api_key": self._tns_api_key, "data": json.dumps(json_file)}
         r = requests.post(self._url_search, headers=self._tns_header, data=search_data, timeout=self._timeout)
+        if r.status_code == 429:
+            print("Too many TNS requests, waiting 30 seconds to try again...")
+            time.sleep(30.)
+            r = requests.post(self._url_search, headers=self._tns_header, data=search_data, timeout=self._timeout)
         if r.status_code != 200:
             print(f"ERROR {r.status_code}")
             return []
@@ -291,6 +295,10 @@ class TNSQueryAgent(QueryAgent):
         json_file = OrderedDict(get_query)
         search_data = {"api_key": self._tns_api_key, "data": json.dumps(json_file)}
         r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
+        if r.status_code == 429:
+            print("Too many TNS requests, waiting 30 seconds to try again...")
+            time.sleep(30.)
+            r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
         if r.status_code != 200:
             print(f"ERROR {r.status_code}")
             return {}
@@ -341,8 +349,9 @@ class TNSQueryAgent(QueryAgent):
                 print("Local database not installed, installing now.")
                 self.update_local_database()
 
-            matches = self._local_df.isin(names_arr)["name"].to_numpy()
-            r_all = self._local_df[matches]
+            matches = self._local_df['name'].isin(list(names_arr))
+            r_all = self._local_df.loc[matches]
+
             for i, r_local in r_all.iterrows():
                 objname = r_local["name"]
                 coord = self._df_coords[i]
