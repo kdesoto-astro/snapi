@@ -37,6 +37,16 @@ class ANTARESQueryAgent(QueryAgent):
             2: "r",
             3: "i",
         }
+        self._band_widths = {
+            1: 1317.15,
+            2: 1553.43,
+            3: 1488.99,
+        }
+        self._band_centers = {
+            1: 4746.48,
+            2: 6366.38,
+            3: 7829.03,
+        }
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
         """
@@ -88,29 +98,33 @@ class ANTARESQueryAgent(QueryAgent):
         time_series.rename_column("ztf_magpsf", "mag")
         time_series.rename_column("ztf_sigmapsf", "mag_err")
         # time_series.rename_column("ztf_magzpsci", "zpt")
-        time_series["zpt"] = 23.90  # bandaid to auto-calibrate
+        time_series["zeropoint"] = 23.90  # bandaid to auto-calibrate
 
         bands = time_series["ztf_fid"]
         ra = float(np.nanmean(time_series["ant_ra"]))
         dec = float(np.nanmean(time_series["ant_dec"]))
 
         # handle non-detections by setting nan mags to maglim
-        time_series["non_detections"] = np.isnan(time_series["mag"])
-        antlims = time_series[time_series["non_detections"]]["ant_maglim"]
-        time_series["mag"][time_series["non_detections"]] = antlims
-        time_series.remove_columns(["ant_mjd", "ant_ra", "ant_dec", "ztf_fid", "ant_mjd", "ant_maglim"])
+        time_series["upper_limit"] = np.isnan(time_series["mag"])
+        antlims = time_series[time_series["upper_limit"]]["ant_maglim"]
+        time_series["mag"][time_series["upper_limit"]] = antlims
+        time_series.remove_columns(["ant_mjd", "ant_ra", "ant_dec", "ztf_fid", "ant_mjd", "ant_maglim", "ztf_magzpsci"])
 
-        df = pd.DataFrame(time_series.to_pandas(), index=pd.DatetimeIndex(times.to_datetime()))
+        df = time_series.to_pandas()
+        df.index = pd.DatetimeIndex(times.to_datetime())
 
         lcs = []
+        
         for b in np.unique(bands):
             mask = bands == b
             filt = Filter(
                 instrument="ZTF",
                 band=self._int_to_band[b],
-                center=np.nan * u.AA,  # pylint: disable=no-member
-            )
-            lc = LightCurve(df[mask], filt=filt)
+                center=self._band_centers[b],
+                width=self._band_widths[b],
+            )  # pylint: disable=no-member
+            lc = LightCurve(df.loc[mask], filt=filt, phased=False, validate=True)
+            lc.update()
             lcs.append(lc)
             
         # retrieve TNS name
@@ -133,8 +147,14 @@ class ANTARESQueryAgent(QueryAgent):
 
         for name in names_arr:
             try:
-                locus1 = get_by_ztf_object_id(name)
-                locus2 = get_by_id(name)
+                try:
+                    locus1 = get_by_ztf_object_id(name)
+                except:
+                    locus1 = None
+                try:
+                    locus2 = get_by_id(name)
+                except:
+                    locus2 = None
                 if (locus1 is None) and (locus2 is None):
                     results.append(QueryResult())
                     continue

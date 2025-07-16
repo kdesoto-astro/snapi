@@ -179,12 +179,12 @@ class Spectrum(Measurement, Plottable):
     @property
     def normalized_fluxes(self) -> NDArray[np.float64]:
         """Return normalized fluxes."""
-        return (self._fluxes - np.min(self._fluxes)) / np.ptp(self._fluxes)
+        return (self._fluxes.to_numpy()[:,0] - np.min(self._fluxes)) / np.ptp(self._fluxes)
 
     @property
     def normalized_errors(self) -> NDArray[np.float64]:
         """Return normalized errors."""
-        return self._errors / np.ptp(self._fluxes)
+        return self._errors.to_numpy()[:,0] / np.ptp(self._fluxes)
 
     def plot(
         self,
@@ -204,22 +204,22 @@ class Spectrum(Measurement, Plottable):
             ax.set_ylabel("Normalized Flux")
             if self._time is not None:
                 ax.plot(
-                    self._wavelengths,
+                    self._wavelengths.values[:,0],
                     self.normalized_fluxes + offset,
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
-                    label=rf"$t={round(self.time,2)}$" if self.time else r"$t=$None",
+                    label=rf"$t={round(self.time,2)}, {self._spectrometer}$" if self.time else rf"$t=$None, {self._spectrometer}$",
                 )
             else:
                 ax.plot(
-                    self._wavelengths,
+                    self._wavelengths.values[:,0],
                     self.normalized_fluxes + offset,
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
                 )
             if self._time is not None and annotate:
                 ax.annotate(
-                    rf"$t={round(self.time, 2)}$" if self.time else r"$t=$None",
+                    rf"$t={round(self.time,2)}, {self._spectrometer}$" if self.time else rf"$t=$None, {self._spectrometer}$",
                     xy=(ax.get_xlim()[1], self.normalized_fluxes[-1] + offset),
                     xytext=(10, 0),
                     textcoords="offset points",
@@ -227,33 +227,34 @@ class Spectrum(Measurement, Plottable):
                     va="center",
                     color=formatter.edge_color,
                 )
+
             ax.fill_between(
-                self._wavelengths,
+                self._wavelengths.values[:,0],
                 self.normalized_fluxes - self.normalized_errors + offset,
                 self.normalized_fluxes + self.normalized_errors + offset,
-                alpha=0.5,
+                alpha=formatter.nondetect_alpha,
                 color=formatter.face_color,
             )
         else:
             ax.set_ylabel("Flux")
             if self._time is not None:
                 ax.plot(
-                    self._wavelengths,
-                    self._fluxes + offset,
-                    label=rf"$t={round(self.time,2)}$" if self.time else r"$t=$None",
+                    self._wavelengths.values[:,0],
+                    self._fluxes.values[:,0] + offset,
+                    label=rf"$t={round(self.time,2)}, {self.spectrometer}$" if self.time else rf"$t=$None, {self.spectrometer}",
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
                 )
             else:
                 ax.plot(
-                    self._wavelengths,
-                    self._fluxes + offset,
+                    self._wavelengths.values[:,0],
+                    self._fluxes.values[:,0] + offset,
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
                 )
             if self._time is not None and annotate:
                 ax.annotate(
-                    rf"$t={round(self.time,2)}$" if self.time else r"$t=$None",
+                    rf"$t={round(self.time,2)}, {self.spectrometer}$" if self.time else rf"$t=$None, {self.spectrometer}",
                     xy=(ax.get_xlim()[1], self._fluxes[-1] + offset),
                     xytext=(10, 0),
                     textcoords="offset points",
@@ -262,10 +263,10 @@ class Spectrum(Measurement, Plottable):
                     color=formatter.edge_color,
                 )
             ax.fill_between(
-                self._wavelengths,
-                self._fluxes - self._errors + offset,
-                self._fluxes + self._errors + offset,
-                alpha=0.5,
+                self._wavelengths.values[:,0],
+                self._fluxes.values[:,0] - self._errors.values[:,0] + offset,
+                self._fluxes.values[:,0] + self._errors.values[:,0] + offset,
+                alpha=formatter.nondetect_alpha,
                 color=formatter.face_color,
             )
         if not overlay_lines:

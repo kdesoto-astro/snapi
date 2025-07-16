@@ -246,12 +246,13 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         if not self._phased and light_curve.is_phased:
             raise ValueError("cannot add phased light_curve to unphased photometry.")
 
-        light_curve.merge_close_times(eps=1e-5)  # pylint: disable=no-member
+        light_curve.merge_close_times(eps=1e-5, inplace=True)  # pylint: disable=no-member
         
         for lc_filt in self._unique_filters:
             # remove any duplicate times
             if lc_filt == str(light_curve.filter):
                 lc = self._construct_lightcurve_single(lc_filt)
+                lc.merge_close_times(eps=1e-5, inplace=True)
                 lc.merge(light_curve, inplace=True)
                 if inplace:
                     self._ts = pd.concat(
@@ -512,12 +513,14 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         )
         
         if inplace:
-            self.mags -= ext_vals
+            correction_factor = 10.0**(0.4 * ext_vals)
+            self.flux *= correction_factor
             return self
         
         lc_copy = self.__class__(
             self._ts, phased=self._phased, validate=False
         )
-        lc_copy.mags -= ext_vals
+        correction_factor = 10.0**(0.4 * ext_vals)
+        lc_copy.flux *= correction_factor
         lc_copy.update()
         return lc_copy

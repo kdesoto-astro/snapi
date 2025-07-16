@@ -48,14 +48,14 @@ class TNSQueryAgent(QueryAgent):
     QueryAgent for querying transient objects from TNS.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, db_path=None) -> None:
         self._url_search = "https://www.wis-tns.org/api/get/search"
         self._url_object = "https://www.wis-tns.org/api/get/object"
         self._load_tns_credentials()
         header_phrase = f'tns_marker{{"tns_id": "{self._tns_bot_id}",'
         header_phrase += f'"type": "bot", "name": "{self._tns_bot_name}"}}'
         self._tns_header = {"User-Agent": header_phrase}
-        self._timeout = 30.0  # seconds
+        self._timeout = 100.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
         self._base_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
@@ -151,7 +151,7 @@ class TNSQueryAgent(QueryAgent):
             if len(wv) == 0:
                 continue
             spectrometer = Spectrometer(
-                instrument=spec["instrument"],
+                instrument=spec["instrument"]['name'],
                 wavelength_start=wv[0],
                 wavelength_delta=wv[1] - wv[0],
                 num_channels=len(wv),
@@ -179,8 +179,14 @@ class TNSQueryAgent(QueryAgent):
         photometry_arr = query_result["photometry"]
         lc_dict: dict[str, dict[str, Any]] = {}
         for phot_dict in photometry_arr:
-            if phot_dict["instrument"]["name"] == "ZTF-Cam":
-                phot_dict["instrument"]["name"] = "ZTF"  # some hard coding
+            if "-" in phot_dict["instrument"]["name"]:
+                phot_dict["instrument"]["name"] = phot_dict["instrument"]["name"].split("-")[0]  # some hard coding
+            if "-" in phot_dict["filters"]["name"]:
+                phot_dict["filters"]["name"] = phot_dict["filters"]["name"].split("-")[0]
+            if phot_dict["filters"]["name"] == 'orange': #ATLAS
+                phot_dict["filters"]["name"] = 'o'
+            elif phot_dict["filters"]["name"] == 'cyan': #ATLAS
+                phot_dict["filters"]["name"] = 'c'
             filt = Filter(
                 instrument=phot_dict["instrument"]["name"],
                 band=phot_dict["filters"]["name"],
@@ -262,7 +268,13 @@ class TNSQueryAgent(QueryAgent):
         json_file = OrderedDict(search_query)
         search_data = {"api_key": self._tns_api_key, "data": json.dumps(json_file)}
         r = requests.post(self._url_search, headers=self._tns_header, data=search_data, timeout=self._timeout)
-        if r.status_code != 200:
+        if r.status_code == 200:
+            pass
+        elif r.status_code == 429:
+            time.sleep(60.)
+            # try again
+            r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
+        else:
             print(f"ERROR {r.status_code}")
             return []
         # sleep necessary time to abide by rate limit
@@ -278,9 +290,14 @@ class TNSQueryAgent(QueryAgent):
         json_file = OrderedDict(get_query)
         search_data = {"api_key": self._tns_api_key, "data": json.dumps(json_file)}
         r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
-        if r.status_code != 200:
+        if r.status_code == 200:
+            pass
+        elif r.status_code == 429:
+            time.sleep(60.)
+            r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
+        else:
             print(f"ERROR {r.status_code}")
-            return {}
+            return []
         # sleep necessary time to abide by rate limit
         reset = get_reset_time(r)
         if reset is not None:
