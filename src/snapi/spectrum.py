@@ -101,6 +101,7 @@ class Spectrum(Measurement, Plottable):
         """Initialize a Spectrum object."""
         super().__init__()
         self._spectrometer = copy.deepcopy(spectrometer)
+        print(self._spectrometer)
         self._time = time
 
         if fluxes is None:

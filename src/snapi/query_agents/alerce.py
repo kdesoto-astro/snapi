@@ -47,8 +47,11 @@ class ALeRCEQueryAgent(QueryAgent):
             return [], False
         # Getting detections for an object
         lc = self._client.query_lightcurve(objname, format="pandas")
-        detections = pd.DataFrame(lc['detections'].item())
-        detections.dropna(axis=1, inplace=True)
+        if 'detections' in lc:
+            detections = pd.DataFrame(lc['detections'].item())
+            detections.dropna(axis=1, inplace=True)
+        else:
+            return [], False
         
         # add nondetections
         nondetections = pd.DataFrame(lc["non_detections"].item())
@@ -139,8 +142,7 @@ class ALeRCEQueryAgent(QueryAgent):
             mask = all_detections["fid"] == b
             lc = LightCurve(all_detections.loc[mask], filt=filt, phased=False, validate=False)
             lc.update()
-            lcs.append(lc)
-            
+            lcs.append(lc)            
         return lcs, True
 
     def _format_query_result(self, query_result: dict[str, Any]) -> QueryResult:
@@ -150,9 +152,9 @@ class ALeRCEQueryAgent(QueryAgent):
         return QueryResult(
             objname=query_result["objname"],
             internal_names=set(),
-            coordinates=query_result["coords"],
-            redshift=query_result["redshift"],
-            light_curves=query_result["light_curves"],
+            coordinates=query_result.get("coords", None),
+            redshift=query_result.get("redshift", None),
+            light_curves=query_result.get("light_curves", []),
         )
 
     def query_by_name(self, names: Any, **kwargs: Mapping[str, Any]) -> tuple[List[QueryResult], bool]:
@@ -166,23 +168,32 @@ class ALeRCEQueryAgent(QueryAgent):
         for name in names_arr:
             try:
                 photometry, _ = self._photometry_helper(name)
-                features = self._client.query_object(name)
-                ra = features["meanra"]
-                dec = features["meandec"]
-
-                redshift = self._client.catshtm_redshift(ra, dec, self._radius)
-                results.append(
-                    self._format_query_result(
-                        {
-                            "objname": name,
-                            "coords": SkyCoord(
-                                ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
-                            ),  # pylint: disable=no-member
-                            "light_curves": photometry,
-                            "redshift": redshift,
-                        }
+                if ('only_photometry' not in kwargs) or (not kwargs['only_photometry']):
+                    features = self._client.query_object(name)
+                    ra = features["meanra"]
+                    dec = features["meandec"]
+                    redshift = self._client.catshtm_redshift(ra, dec, self._radius)
+                    results.append(
+                        self._format_query_result(
+                            {
+                                "objname": name,
+                                "coords": SkyCoord(
+                                    ra * u.deg, dec * u.deg, frame="icrs"  # pylint: disable=no-member
+                                ),  # pylint: disable=no-member
+                                "light_curves": photometry,
+                                "redshift": redshift,
+                            }
+                        )
                     )
-                )
+                else:
+                    results.append(
+                        self._format_query_result(
+                            {
+                                "objname": name,
+                                "light_curves": photometry,
+                            }
+                        )
+                    )
             except (ChunkedEncodingError, APIError):
                 results.append(QueryResult())
 

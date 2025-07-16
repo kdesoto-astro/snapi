@@ -57,10 +57,23 @@ class TNSQueryAgent(QueryAgent):
         self._tns_header = {"User-Agent": header_phrase}
         self._timeout = 100.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
-        self._base_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "data"
-        )
+        if db_path is None:
+            if os.path.exists(
+                os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                    "data"
+                )
+            ):
+                self._base_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                    "data"
+                )
+            else:
+                self._base_path = os.getcwd()
+        else:
+            self._base_path = db_path
+        
+        os.makedirs(self._base_path, exist_ok=True)
         self._data_path = os.path.join(
             self._base_path, "tns_public_objects.csv",
         )
@@ -268,13 +281,11 @@ class TNSQueryAgent(QueryAgent):
         json_file = OrderedDict(search_query)
         search_data = {"api_key": self._tns_api_key, "data": json.dumps(json_file)}
         r = requests.post(self._url_search, headers=self._tns_header, data=search_data, timeout=self._timeout)
-        if r.status_code == 200:
-            pass
-        elif r.status_code == 429:
-            time.sleep(60.)
-            # try again
-            r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
-        else:
+        if r.status_code == 429:
+            print("Too many TNS requests, waiting 30 seconds to try again...")
+            time.sleep(30.)
+            r = requests.post(self._url_search, headers=self._tns_header, data=search_data, timeout=self._timeout)
+        if r.status_code != 200:
             print(f"ERROR {r.status_code}")
             return []
         # sleep necessary time to abide by rate limit
@@ -290,12 +301,11 @@ class TNSQueryAgent(QueryAgent):
         json_file = OrderedDict(get_query)
         search_data = {"api_key": self._tns_api_key, "data": json.dumps(json_file)}
         r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
-        if r.status_code == 200:
-            pass
-        elif r.status_code == 429:
-            time.sleep(60.)
+        if r.status_code == 429:
+            print("Too many TNS requests, waiting 30 seconds to try again...")
+            time.sleep(30.)
             r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
-        else:
+        if r.status_code != 200:
             print(f"ERROR {r.status_code}")
             return []
         # sleep necessary time to abide by rate limit
@@ -345,8 +355,9 @@ class TNSQueryAgent(QueryAgent):
                 print("Local database not installed, installing now.")
                 self.update_local_database()
 
-            matches = self._local_df.isin(names_arr)["name"].to_numpy()
-            r_all = self._local_df[matches]
+            matches = self._local_df['name'].isin(list(names_arr))
+            r_all = self._local_df.loc[matches]
+
             for i, r_local in r_all.iterrows():
                 objname = r_local["name"]
                 coord = self._df_coords[i]
