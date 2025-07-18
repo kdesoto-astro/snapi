@@ -148,6 +148,9 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
                 sub_table["flux"] * sub_table["mag_error"]
             )
 
+        # fix upper limits - only mag
+        self._ts.loc[self._ts.upper_limit, 'mag'] = -2.5 * np.log10(5. * self._ts.loc[self._ts.upper_limit, 'flux_error']) + self._ts.loc[self._ts.upper_limit, 'zeropoint']
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, self.__class__):
             return False
@@ -261,16 +264,37 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             label=str(self._observer),
         )
         # plot non-detections
-        ax.scatter(
-            times[self._ts['upper_limit']],
-            vals[self._ts['upper_limit']],
-            c=formatter.face_color,
-            edgecolor=formatter.edge_color,
-            marker=formatter.nondetect_marker_style,
-            alpha=formatter.nondetect_alpha,
-            s=formatter.nondetect_size,
-            zorder=-2,
-        )
+        if mags:
+            ax.scatter(
+                times[self._ts['upper_limit']],
+                vals[self._ts['upper_limit']],
+                c=formatter.face_color,
+                edgecolor=formatter.edge_color,
+                marker=formatter.nondetect_marker_style,
+                alpha=formatter.nondetect_alpha,
+                s=formatter.nondetect_size,
+                zorder=-2,
+            )
+        else:
+            ax.errorbar(
+                times[self._ts['upper_limit']],
+                vals[self._ts['upper_limit']],
+                yerr=val_errs[self._ts['upper_limit']],
+                c=formatter.edge_color,
+                alpha=formatter.nondetect_alpha,
+                fmt="none",
+                zorder=-3,
+            )
+            ax.scatter(
+                times[self._ts['upper_limit']],
+                vals[self._ts['upper_limit']],
+                c=formatter.face_color,
+                edgecolor=formatter.edge_color,
+                marker=formatter.marker_style,
+                alpha=formatter.nondetect_alpha,
+                s=formatter.marker_size,
+                zorder=-2,
+            )
 
         return ax
 
@@ -282,13 +306,13 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         repeat_idxs = np.abs(t_diffs) < eps  # pylint: disable=no-member
 
         if np.all(~repeat_idxs):  # no repeats
-            return
+            return self
 
         repeat_idxs = np.insert(repeat_idxs, 0, False)
         keep_idxs = np.argwhere(~repeat_idxs)
 
         new_f, new_ferr, new_nondet = update_merged_fluxes(
-            keep_idxs, self._ts["flux"], self._ts["flux_error"]
+            keep_idxs, self._ts["flux"], self._ts["flux_error"], 5.0
         )
         
         if inplace:

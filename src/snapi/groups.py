@@ -113,6 +113,7 @@ class Group(Base):
             
         else:
             group = self.__class__()
+            group._cols = self._cols
             for obj_id in self.associated_objects.index:
                 if (obj_id[1:] in ids) and hasattr(self, obj_id):
                     group_obj = getattr(self, obj_id)

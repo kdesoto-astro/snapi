@@ -115,7 +115,7 @@ class Spectroscopy(Plottable):
 
         for i, spec in enumerate(self._spectra[::-1]):
             if vertical_offsets:
-                geattr(self,spec).plot(
+                getattr(self,spec).plot(
                     ax,
                     formatter=formatter,
                     normalize=normalize,
@@ -123,7 +123,7 @@ class Spectroscopy(Plottable):
                     offset=cumul_offset[i],
                 )
             else:
-                geattr(self,spec).plot(ax, formatter=formatter, normalize=normalize, overlay_lines=overlay_lines)
+                getattr(self,spec).plot(ax, formatter=formatter, normalize=normalize, overlay_lines=overlay_lines)
             formatter.rotate_colors()
             formatter.rotate_markers()
 
@@ -131,7 +131,7 @@ class Spectroscopy(Plottable):
         formatter.reset_markers()
 
         for i, spec_id in enumerate(self._spectra[::-1]):
-            spec = getattr(self, spec)
+            spec = getattr(self, spec_id)
             if vertical_offsets and (spec.time is not None):
                 ax.annotate(
                     rf"$t={round(spec.time, 2)}$",

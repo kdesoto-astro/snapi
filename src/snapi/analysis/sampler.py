@@ -236,7 +236,7 @@ class Sampler(BaseEstimator):  # type: ignore
         check_array(y, ensure_2d=False, ensure_all_finite=False)
 
         # remove nan/inf rows
-        mask = np.all(np.isfinite(X[:, 2].astype(np.float64))) & np.isfinite(y)
+        mask = np.isfinite(X[:, 2].astype(np.float64)) & np.isfinite(y)
 
         if event_indices is not None:
             # Prepare new index ranges
@@ -442,11 +442,11 @@ class Sampler(BaseEstimator):  # type: ignore
             X = self._X
         if formatter is None:
             formatter = Formatter()
-        #for b in photometry._unique_filters:
-        #print(X)
+
         for b in np.unique(X[:,1]):
             if dense:
-                t_arr = np.linspace(np.min(X[:, 0]) - 20.0, np.max(X[:, 0]) + 20.0, 1000)
+                t = X[:,0].astype(float)
+                t_arr = np.linspace(np.min(t) - 20.0, np.max(t) + 20.0, 1000)
                 new_x = np.repeat(t_arr[np.newaxis, :].T, 3, axis=1).astype(object)
                 new_x[:, 1] = b
                 new_x[:, 2] = 0.0  # filler

@@ -55,7 +55,7 @@ class TNSQueryAgent(QueryAgent):
         header_phrase = f'tns_marker{{"tns_id": "{self._tns_bot_id}",'
         header_phrase += f'"type": "bot", "name": "{self._tns_bot_name}"}}'
         self._tns_header = {"User-Agent": header_phrase}
-        self._timeout = 30.0  # seconds
+        self._timeout = 100.0  # seconds
         self._radius = 3.0  # initial search radius in arcsec
         if db_path is None:
             if os.path.exists(
@@ -164,7 +164,7 @@ class TNSQueryAgent(QueryAgent):
             if len(wv) == 0:
                 continue
             spectrometer = Spectrometer(
-                instrument=spec["instrument"],
+                instrument=spec["instrument"]['name'],
                 wavelength_start=wv[0],
                 wavelength_delta=wv[1] - wv[0],
                 num_channels=len(wv),
@@ -192,8 +192,14 @@ class TNSQueryAgent(QueryAgent):
         photometry_arr = query_result["photometry"]
         lc_dict: dict[str, dict[str, Any]] = {}
         for phot_dict in photometry_arr:
-            if phot_dict["instrument"]["name"] == "ZTF-Cam":
-                phot_dict["instrument"]["name"] = "ZTF"  # some hard coding
+            if "-" in phot_dict["instrument"]["name"]:
+                phot_dict["instrument"]["name"] = phot_dict["instrument"]["name"].split("-")[0]  # some hard coding
+            if "-" in phot_dict["filters"]["name"]:
+                phot_dict["filters"]["name"] = phot_dict["filters"]["name"].split("-")[0]
+            if phot_dict["filters"]["name"] == 'orange': #ATLAS
+                phot_dict["filters"]["name"] = 'o'
+            elif phot_dict["filters"]["name"] == 'cyan': #ATLAS
+                phot_dict["filters"]["name"] = 'c'
             filt = Filter(
                 instrument=phot_dict["instrument"]["name"],
                 band=phot_dict["filters"]["name"],
@@ -301,7 +307,7 @@ class TNSQueryAgent(QueryAgent):
             r = requests.post(self._url_object, headers=self._tns_header, data=search_data, timeout=self._timeout)
         if r.status_code != 200:
             print(f"ERROR {r.status_code}")
-            return {}
+            return []
         # sleep necessary time to abide by rate limit
         reset = get_reset_time(r)
         if reset is not None:

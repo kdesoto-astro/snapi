@@ -5,6 +5,7 @@ import numba
 import numpy as np
 from numpy.typing import NDArray
 import scipy
+from scipy.stats import median_abs_deviation
 
 
 T = TypeVar("T", int, float, np.float64)
@@ -62,7 +63,7 @@ def resample_helper(cen: Sequence[T], unc: Sequence[T], num: int) -> NDArray[np.
 
 # @numba.njit(parallel=True)  # type: ignore
 def update_merged_fluxes(
-    keep_idxs: NDArray[np.int64], flux: NDArray[np.float64], flux_unc: NDArray[np.float64]
+    keep_idxs: NDArray[np.int64], flux: NDArray[np.float64], flux_unc: NDArray[np.float64], nondetect_thresh: float,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
     """Update merged fluxes with numba."""
     new_f = []
@@ -74,21 +75,15 @@ def update_merged_fluxes(
         else:
             repeat_idx_subset = np.arange(keep_idx, keep_idxs[i + 1])
 
-        nondetect_subset = repeat_idx_subset[~np.isfinite(flux_unc.iloc[repeat_idx_subset])]
-        detect_subset = repeat_idx_subset[np.isfinite(flux_unc.iloc[repeat_idx_subset])]
 
-        if len(detect_subset) == 0:
-            new_f.append(np.mean(flux.iloc[nondetect_subset]))
-            new_ferr.append(np.nan)
-            new_nondet.append(True)
-            continue
+        weights = 1.0 / flux_unc.iloc[repeat_idx_subset] ** 2
+        new_f_single = np.average(flux.iloc[repeat_idx_subset], weights=weights)
+        new_var = median_abs_deviation(flux.iloc[repeat_idx_subset]) / np.sqrt(len(flux.iloc[repeat_idx_subset]))
+        new_var += 1.0 / np.sqrt(np.sum(weights)) / np.sqrt(len(flux.iloc[repeat_idx_subset]))
 
-        weights = 1.0 / flux_unc.iloc[detect_subset] ** 2
-        new_f.append(np.average(flux.iloc[detect_subset], weights=weights))
-        new_var = np.var(flux.iloc[detect_subset])
-        new_var += 1.0 / np.sum(weights)
-        new_ferr.append(np.sqrt(new_var))
-        new_nondet.append(False)
+        new_f.append(new_f_single)
+        new_ferr.append(new_var)
+        new_nondet.append(new_f_single / new_var < nondetect_thresh)
 
     return np.array(new_f), np.array(new_ferr), np.array(new_nondet)
 
