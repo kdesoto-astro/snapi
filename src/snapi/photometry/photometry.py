@@ -205,7 +205,10 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         new_phot.flux_errors /= peak_flux
         return new_phot
 
-    def plot(self, ax: Axes, formatter: Optional[Formatter] = None, mags: bool = True) -> Axes:
+    def plot(
+            self, ax: Axes, formatter: Optional[Formatter] = None,
+            mags: bool = True, offset = 0.0
+        ) -> Axes:
         """Plots the collection of light curves.
 
         Parameters
@@ -221,8 +224,10 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         if formatter is None:
             formatter = Formatter()  # make default formatter
         
-        for lc in self.light_curves:
-            lc.plot(ax, formatter=formatter, mags=mags)
+        for i, lc in enumerate(self.light_curves):
+            lc_offset = lc.copy()
+            lc_offset.flux += i * offset
+            lc_offset.plot(ax, formatter=formatter, mags=mags)
             formatter.rotate_colors()
             formatter.rotate_markers()
             if mags:
@@ -501,20 +506,24 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
                 raise ValueError("Coordinate-calculated MW E(B-V) does not agree with provided MW E(B-V).")
 
             mwebv = mwebv_calced
+            r_v = 2.742
 
         else:
+            r_v = 3.1
             if mwebv is None:
                 raise ValueError("Either coordinates or mwebv must be provided.")
 
-        av_sfd = 2.742 * mwebv
+        av_sfd = r_v * mwebv
         
         ext_vals = extinction.fm07(
             self.filt_centers, av_sfd, unit="aa"  # pylint: disable=no-member
         )
+        print(ext_vals)
         
         if inplace:
             correction_factor = 10.0**(0.4 * ext_vals)
             self.flux *= correction_factor
+            self.flux_error *= correction_factor
             return self
         
         lc_copy = self.__class__(
@@ -522,5 +531,6 @@ class Photometry(LightCurve):  # pylint: disable=too-many-public-methods
         )
         correction_factor = 10.0**(0.4 * ext_vals)
         lc_copy.flux *= correction_factor
+        lc_copy.flux_error *= correction_factor
         lc_copy.update()
         return lc_copy

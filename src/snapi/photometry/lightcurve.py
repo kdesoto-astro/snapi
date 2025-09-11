@@ -221,6 +221,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
         ax: Axes,
         formatter: Optional[Formatter] = None,
         mags: bool = True,
+        label = None,
     ) -> Axes:
         """Plot a single light curve.
         Face and edge colors determined by formatter.
@@ -254,6 +255,10 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             fmt="none",
             zorder=-1,
         )
+
+        if label is None:
+            label = rf"{self._observer.instrument} ${self._observer.band}$"
+
         ax.scatter(
             times[~self._ts['upper_limit']],
             vals[~self._ts['upper_limit']],
@@ -261,7 +266,7 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             edgecolor=formatter.edge_color,
             marker=formatter.marker_style,
             s=formatter.marker_size,
-            label=str(self._observer),
+            label=label,
         )
         # plot non-detections
         if mags:
@@ -496,12 +501,14 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
                 raise ValueError("Coordinate-calculated MW E(B-V) does not agree with provided MW E(B-V).")
 
             mwebv = mwebv_calced
+            r_v = 2.742
 
         else:
+            r_v = 3.1
             if mwebv is None:
                 raise ValueError("Either coordinates or mwebv must be provided.")
 
-        av_sfd = 2.742 * mwebv
+        av_sfd = r_v * mwebv
 
         if self._observer is None:
             ext_val = 0.0
@@ -514,11 +521,15 @@ class LightCurve(Measurement, TimeSeries, Plottable):  # pylint: disable=too-man
             ]  # in magnitudes
 
         if inplace:
-            self.mags -= ext_val
+            correction_factor = 10.0**(0.4 * ext_val)
+            self.flux *= correction_factor
+            self.flux_error *= correction_factor
             return self
         
         lc_copy = self.copy()
-        lc_copy.mags -= ext_val
+        correction_factor = 10.0**(0.4 * ext_val)
+        lc_copy.flux *= correction_factor
+        lc_copy.flux_error *= correction_factor
         return lc_copy
 
     def convert_to_images(
