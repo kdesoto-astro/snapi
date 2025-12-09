@@ -89,6 +89,7 @@ class Base(ABC):
             attr = getattr(self, arr_attr)
             if not isinstance(attr, pd.DataFrame):
                 attr = pd.Series(attr).to_frame()
+                
             feather.write_feather(
                 attr,
                 f"{file_name}/{arr_attr}.feather",
@@ -139,8 +140,13 @@ class Base(ABC):
             #t1 = time.perf_counter()
             for arr_attr in new_obj.arr_attrs:
                 attr = feather.read_feather(f"{file_name}/{arr_attr}.feather")
-                if attr.ndim == 1:
-                    setattr(new_obj, arr_attr, attr.to_numpy())
+                if (attr.ndim == 1) or (attr.shape[1] == 1) or (attr.shape[0] == 1):
+                    attr = attr.to_numpy()
+                    if attr.shape[1] == 1:
+                        attr = attr[:,0]
+                    elif attr.shape[0] == 1:
+                        attr = attr[0]
+                    setattr(new_obj, arr_attr, attr)
                 else:
                     setattr(new_obj, arr_attr, attr)
             #print(new_obj.__class__.__name__, "arr", time.perf_counter() - t1)

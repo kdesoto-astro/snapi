@@ -332,7 +332,7 @@ class Sampler(BaseEstimator):  # type: ignore
 
         # Input validation
         val_x, val_y, _ = self._validate_arrs(X, y)
-        y_pred, _ = self.predict(val_x)
+        y_pred, _ = self.predict(val_x, num_fits=100)
         return self._reduced_chi_squared(val_x, val_y, y_pred, **kwargs)
 
     def _convert_photometry_to_arrs(
@@ -415,7 +415,7 @@ class Sampler(BaseEstimator):  # type: ignore
             Whether the y data is in magnitudes.
         """
         x_phot, _ = self._convert_photometry_to_arrs(photometry)
-        return *self.predict(x_phot), self._mag_y
+        return *self.predict(x_phot, num=100), self._mag_y
 
     def plot_fit(
         self,
@@ -424,6 +424,7 @@ class Sampler(BaseEstimator):  # type: ignore
         photometry: Optional[Photometry] = None,
         X: Optional[NDArray[np.object_]] = None,
         dense: bool = True,
+        offset=None,
     ) -> Axes:
         """Plots the model fit.
 
@@ -436,39 +437,54 @@ class Sampler(BaseEstimator):  # type: ignore
         dense : bool, optional
             Whether to make time array dense for better plotting.
         """
+        if offset is None:
+            offset = 0.0
+
         if photometry is not None:
             X, _ = self._convert_photometry_to_arrs(photometry)
+            bands = photometry._unique_filters
+        else:
+            if X is not None:
+                bands = np.unique(X[:,1])
+
         if X is None:
             X = self._X
+            bands = np.unique(X[:,1])
+
         if formatter is None:
             formatter = Formatter()
 
-        for b in np.unique(X[:,1]):
+        for i, b in enumerate(bands):
             if dense:
                 t = X[:,0].astype(float)
                 t_arr = np.linspace(np.min(t) - 20.0, np.max(t) + 20.0, 1000)
                 new_x = np.repeat(t_arr[np.newaxis, :].T, 3, axis=1).astype(object)
                 new_x[:, 1] = b
                 new_x[:, 2] = 0.0  # filler
-                y_pred, val_x = self.predict(new_x)
+                y_pred, val_x = self.predict(new_x, num_fits=30)
             else:
-                y_pred, val_x = self.predict(X[X[:, 1] == b])
+                y_pred, val_x = self.predict(X[X[:, 1] == b], num_fits=30)
             if len(y_pred) == 0:
                 formatter.rotate_colors()
                 formatter.rotate_markers()
                 continue
+
+            if offset == 0.0:
+                label = f"{b}_{self._sampler_name}"
+            else:
+                label = f"{b}_{self._sampler_name} + {round(i * offset, 1)}"
             ax.plot(
                 val_x[:, 0],
-                y_pred[0],
-                label=f"{b}_{self._sampler_name}",
+                y_pred[0] + i * offset,
                 color=formatter.edge_color,
                 linewidth=formatter.line_width,
+                label=label,
                 alpha=formatter.nondetect_alpha,
             )
-            for y_pred_single in y_pred[-30:]:
+            for y_pred_single in y_pred:
                 ax.plot(
                     val_x[:, 0],
-                    y_pred_single,
+                    y_pred_single + i * offset,
                     color=formatter.edge_color,
                     linewidth=formatter.line_width,
                     alpha=formatter.nondetect_alpha,
